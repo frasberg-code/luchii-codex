@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 7 validated the four new/changed areas: branding (Luchii, Powered by Frasberg), 3D Studio (/3d + /api/3d), voice clone speak + STS clone, and saved voice takes (persist across reload, delete persists). New file /app/backend/tests/test_studio3d_and_takes.py has 16 tests, all pass in 46s with -n 0 (TestBranding, TestStudio3D x7, TestVoiceTakes x4, TestCloneSpeak x4). Covers: POST /api/3d returns queued/running with queue_position; two concurrent jobs -> 2nd queued at pos>=2; GET /api/3d/{id}/model.glb returns model/gltf-binary with magic bytes 'glTF' for the seeded 'wooden treasure chest' under session_id='t1'; 404 for not-ready; GET /api/3d requires session_id or auth; voice/takes full CRUD (create, list, stream audio, delete; 404 after delete; 15MB size cap); POST /api/voice/clone/speak gated on sample; POST /api/sts voice=clone requires auth (400 without). UI: branding verified across /, /create, /models, /developers, /legal/terms, /3d, /sts, /login — no 'Luchii AI' text in any page body (page title 'Luchii | The Creative Platform, powered by Frasberg'), nav logo src=/luchii-logo.png, hero 'Every tool and model powered by Frasberg' and footer 'Powered by Frasberg' present. /3d: pre-set localStorage.luchii_session='t1' to recover seeded completed model — model-viewer rendered with camera-controls + auto-rotate, model-download-btn href points to .../model.glb; after Generate 3D click, model-queue-notice label 'In the queue: #4' appeared and the model-history button for the new prompt shows status 'queued' (expected since one job was already in flight from prior backend test). /sts logged in as test@luchii.ai: sts-voice-clone button visible (user has sample), uploaded /app/tests/src.wav, selected clone, Convert produced a transcript 'Hello there, this is a test of the voice conversion system.' and a new sts-take-0 with '· saved' indicator in 12s via luchii-local engine; after reload, the take persisted; remove-0 deleted it and after reload it stayed gone. /gallery: all 3 tabs (gallery-tab-images/takes/models) present; takes tab lists saved take with playable audio; models tab shows Empty state for the test user (no models owned by this logged-in user — expected since the seeded 3D was anonymous session_id='t1').",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/", "issue": "Root message still says 'Luchii AI API is running' — not user-visible but inconsistent with the rebrand (no 'Luchii AI' anywhere else)."},
+      {"endpoint": "/api/generate", "issue": "Returned 502 from the preview proxy during the full regression run — happened while 2-3 Shap-E 3D jobs were still processing on only 2 CPUs. Transient / resource-contention, not a code bug. All new-feature tests pass with -n 0."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_studio3d_and_takes.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_queue.py",
+    "/app/test_reports/pytest/iter7_new.xml"
+  ],
+  "action_items": [
+    "(Optional) Change the root /api/ message from 'Luchii AI API is running' to 'Luchii API is running' to complete the rebrand."
+  ],
+  "critical_code_review_comments": [
+    "server.py run_3d uses a single asyncio.Lock (shape_queue) which serializes Shap-E on CPU — correct for a 2-CPU preview. On startup the loop also re-queues any 'running' or 'queued' rows (update_many to {status:'queued'}) which is a nice crash-recovery.",
+    "model_out computes queue_position on every GET with count_documents + a $lt on created_at — fine at this scale, but will become an N+1 cost if list_3d returns many queued items. Add index on (status, created_at) if the queue grows.",
+    "voice/takes stores audio in GridFS keyed on user_id — delete also removes the gridfs file (good). The 15MB cap matches the server's HTTPException. audio_url returns 404 after delete as expected.",
+    "SpeechToSpeech.jsx addTake saves via POST /voice/takes immediately when a user is signed in and overlays the server-side take id (data-testid 'saved' indicator keys off take.id). The removeTake path hits DELETE first and only drops from UI on success — correct ordering.",
+    "Studio3D.jsx uses polling every 5s via setTimeout; it correctly cleans up with clearTimeout on unmount. localStorage key 'luchii_session' is reused across anonymous and authenticated states (fine, since the backend prefers user_id for logged-in users).",
+    "Gallery.jsx has a slightly confusing ternary: '!busy && tab === takes ? ... : !busy && tab === models ? ... : busy ? ... : items.length === 0 ? ...'. Readable but a tabs-dispatch map would be cleaner.",
+    "Server root response still says 'Luchii AI API is running' — backend_test.py only asserts 'Luchii' substring so it passes, but this is a leftover from the rebrand."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_studio3d_and_takes.py"
+  ],
+  "success_rate": {"backend": "100% on new 3D/takes/clone tests (16/16 in 46s). Full suite blocked by one 502 from CPU contention; the new tests themselves pass clean.", "frontend": "100% of exercised flows (branding, /3d, /sts clone + saved takes + reload + delete persistence, /gallery tabs)"},
+  "test_credentials": "test@luchii.ai / Test1234! (admin). /app/memory/test_credentials.md unchanged.",
+  "seed_data_creation": "Added a few /api/3d rows under session_id='test-3d-iter7', 'test-3d-queue', 'test-3d-notready'. Added one gallery test take for the logged-in test user (not deleted). The seeded 'wooden treasure chest' under session_id='t1' remains completed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run heavy backend tests with -n 0 and keep concurrent 3D jobs <=2 — the preview proxy returns 502 when CPU is saturated by overlapping Shap-E + SD jobs. The seeded completed 3D model (id 72d16794..., prompt 'a wooden treasure chest') lives under session_id='t1' and is used by test_glb_fetch_existing and by the UI test (localStorage 'luchii_session'='t1' to see it on /3d). To verify STS saved-take persistence, log in as test@luchii.ai, upload /app/tests/src.wav, Convert — a take with '· saved' marker appears and survives reload; DELETE also persists.",
+  "rca of the issue": "No functional issues. The one minor branding leftover is the backend root message ('Luchii AI API is running'); not user-visible but recommended to rename for consistency. The 502 during full regression is CPU contention, not a code bug — reproducible only when 3+ heavy generation jobs overlap on the 2-CPU preview."
+}

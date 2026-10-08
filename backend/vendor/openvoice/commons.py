@@ -107,10 +107,6 @@ def fused_add_tanh_sigmoid_multiply(input_a, input_b, n_channels):
     return acts
 
 
-def convert_pad_shape(pad_shape):
-    layer = pad_shape[::-1]
-    pad_shape = [item for sublist in layer for item in sublist]
-    return pad_shape
 
 
 def shift_1d(x):

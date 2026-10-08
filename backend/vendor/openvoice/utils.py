@@ -14,7 +14,7 @@ def get_hparams_from_file(config_path):
 class HParams:
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
-            if type(v) == dict:
+            if isinstance(v, dict):
                 v = HParams(**v)
             self[k] = v
 
@@ -138,7 +138,7 @@ def merge_short_sentences_latin(sens):
         if len(sens_out[-1].split(" ")) <= 2:
             sens_out[-2] = sens_out[-2] + " " + sens_out[-1]
             sens_out.pop(-1)
-    except:
+    except Exception:
         pass
     return sens_out
 
@@ -189,6 +189,6 @@ def merge_short_sentences_zh(sens):
         if len(sens_out[-1]) <= 2:
             sens_out[-2] = sens_out[-2] + " " + sens_out[-1]
             sens_out.pop(-1)
-    except:
+    except Exception:
         pass
     return sens_out

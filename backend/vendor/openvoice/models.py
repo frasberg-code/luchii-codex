@@ -7,10 +7,10 @@ from openvoice import commons
 from openvoice import modules
 from openvoice import attentions
 
-from torch.nn import Conv1d, ConvTranspose1d, Conv2d
-from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
+from torch.nn import Conv1d, ConvTranspose1d
+from torch.nn.utils import weight_norm, remove_weight_norm
 
-from openvoice.commons import init_weights, get_padding
+from openvoice.commons import init_weights
 
 
 class TextEncoder(nn.Module):

@@ -242,7 +242,7 @@ class JobIn(BaseModel):
 # ---------- routes ----------
 @api.get("/")
 async def root():
-    return {"message": "Luchii AI API is running"}
+    return {"message": "Luchii API is running"}
 
 
 @api.post("/auth/register")
