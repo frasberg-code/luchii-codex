@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 6 targeted test of 3 features: (1) backend 429 image queue, (2) /create queue notice + auto-retry, (3) /login + /signup routes, (4) /sts transcript+takes flow. All 4 features pass end-to-end. Backend suite: 35/35 pass with -n 0 (added test_queue.py for concurrent /generate 429 behavior; relaxed test_generate_graceful_error to accept 429 since lock contention is now a legitimate response). Full regression + new tests ran in 229s. Frontend: /login shows AuthModal with auth-email-input/auth-password-input/auth-submit-btn; closing modal (Escape) navigates to /; login with test@luchii.ai / Test1234! on /login?next=/create persists token to localStorage.luchii_token, closes modal, and lands on /create (clean URL, no ?next=); /login while authed redirects to /; /signup shows register mode with auth-name-input + 'Create your account' heading. /sts: uploaded a WAV produced by /api/tts ('hello world from luchii'), Convert transcribed it correctly ('Hello world from luchii'), sts-take-0 appeared with download attribute 'luchii-sts-nova.wav', edited transcript + selected onyx + Re-speak produced a new take at index 0 (previous nova shifted to index 1), remove button correctly dropped take count by 1. /create queue: opened two independent browser contexts, fired generate in A, then B ~1.5s later; B's canvas showed data-testid='image-queue-notice' with label 'Your image is in the queue...' and sublabel 'Luchii is finishing another image. Yours starts next.'; browser console showed 429 responses with Retry-After header; postQueued auto-retried; both A and B eventually rendered data-testid='result-image' (A ~45s, B ~90s on CPU). Backend verified Retry-After: '8' and detail string match exactly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/generate", "issue": "test_generate_graceful_error could return 429 if another image gen is in flight on the shared preview; relaxed assertion to accept 200/424/429. Not a product bug."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_queue.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py image_with_fallback correctly checks local_engines.image_busy() AFTER Frasberg fails and returns 429 with Retry-After:8 before trying to acquire the lock. Clean implementation.",
+    "Generator.jsx postQueued busy-loops on 429 using Retry-After header value; good UX. The toast only fires once (markQueued only toasts on first transition) — nice touch.",
+    "Login.jsx redirect-on-already-authed uses useEffect with navigate(next, {replace:true}); works correctly for both /login (next defaults to /) and /login?next=/create.",
+    "SpeechToSpeech.jsx takes list is capped at 10 (slice(0,10)) — reasonable; keys are Date.now() which could collide if two takes land in the same millisecond but very unlikely in UI."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_queue.py"
+  ],
+  "success_rate": {"backend": "100% (35/35)", "frontend": "100% of exercised flows (/login, /signup, /sts full loop, /create concurrent queue)"},
+  "test_credentials": "test@luchii.ai / Test1234! (admin, works). /app/memory/test_credentials.md already correct.",
+  "seed_data_creation": "/api/generate rows under session_id='test-queue' (2) and 'test-fallback'/'test-edit' from regression suite; a few STS takes in-memory UI only.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 3 new features from iteration 6 verified. Run backend tests with -n 0 to avoid preview-proxy 502s when two CPU image generations serialize (iteration 5 note). The 429 queue path is now covered by backend/tests/test_queue.py::test_concurrent_generate_returns_429_with_retry_after. Frontend data-testids now present on Generator.jsx (prompt-input, generate-btn, upscale-btn, result-image, image-queue-notice, upscale-queue-notice) — iteration 5's MEDIUM-priority gap is resolved. Login.jsx exposes auth-email-input/auth-password-input/auth-submit-btn/auth-name-input via AuthModal.",
+  "rca of the issue": "No regressions found. The one test adjustment (test_generate_graceful_error now also accepts 429) is because the newly-added queue behavior changes the contract: when the local image lock is held, /generate correctly returns 429 instead of blocking — this is desired product behavior, so the test was updated to document it."
+}

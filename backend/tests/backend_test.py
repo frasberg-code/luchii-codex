@@ -73,10 +73,13 @@ class TestGenerate:
         r = session.post(f"{API}/generate",
                          json={"prompt": "a cat", "style": "cinematic", "aspect_ratio": "1:1",
                                "session_id": "test-sess"})
-        # Expected: 200 if upstream works, 424 if frasberg down
-        assert r.status_code in (200, 424)
+        # Expected: 200 if upstream works, 424 if frasberg down, 429 if local engine busy
+        assert r.status_code in (200, 424, 429)
         if r.status_code == 424:
             assert "Frasberg" in r.json().get("detail", "")
+        elif r.status_code == 429:
+            assert r.headers.get("Retry-After") == "8"
+            assert "queue" in r.json().get("detail", "").lower()
         else:
             d = r.json()
             assert "image_base64" in d and d["prompt"] == "a cat"

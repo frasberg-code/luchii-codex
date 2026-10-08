@@ -31,3 +31,4 @@ Import and clone an exact copy of luchii-ai.com (tools, files, database, feature
 
 ## Update (2026-10, import)
 - Restored from GitHub frasberg-code/luchii-tools into a new pod. Backend .env restored, frontend uses this pod URL. Deps installed (emergentintegrations/litellm skipped, not used). Smoke tests passed (iteration_5).
+- 2026-10: Image queue (429 + Retry-After when the local image engine is busy; /create shows a queue notice and auto-retries). /login and /signup routes open the auth modal (?next= supported). STS studio upgraded: editable transcript, re-speak in any voice, takes history with download. Tests: iteration_6 all pass.
