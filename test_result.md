@@ -101,3 +101,115 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: >
+  Imported the Luchii AI platform exactly from GitHub (frasberg-code/luchii-codex) into this workspace,
+  recreated the .env with the owner's real Frasberg keys, and pointed heavy model dirs to /var (disk limits).
+  Now running a full backend test pass to establish a clean baseline after the import, and confirming that
+  the /video tool produces real locally-rendered clips (not Frasberg sample files).
+
+backend:
+  - task: "Auth (register/login/me, JWT, lockout)"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Imported unchanged. Fresh test_database. Seeded admin test account test@luchii.ai / Test1234!."
+  - task: "Image generate/edit/upscale with Frasberg->local fallback"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py, backend/local_engines.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Frasberg image returns 401 (owner's service), so falls back to SD-Turbo local. Verify generate returns image_base64 and engine field."
+  - task: "Video generation (local keyframe engine)"
+    implemented: true
+    working: true
+    file: "backend/server.py, backend/local_engines.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Confirmed via manual run: POST /api/video -> job -> completed, /api/media returns real H.264 MP4 (120 frames, 640x384). This is local render, NOT a Frasberg sample clip. Please retest the full flow incl. queue_position."
+  - task: "Music generation (local MusicGen)"
+    implemented: true
+    working: true
+    file: "backend/server.py, backend/local_engines.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Confirmed via manual run: POST /api/music -> completed, /api/media returns valid 8s WAV (32kHz). First run downloads MusicGen ~2.3GB to /var."
+  - task: "3D Studio generate + glb fetch"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py, backend/local_engines.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Shap-E on CPU (~3-4 min). Verify POST /api/3d queue, GET /api/3d/{id}/model.glb returns model/gltf-binary."
+  - task: "TTS + Speech-to-Speech + voice clone (Frasberg->local)"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py, backend/local_engines.py, backend/vendor/openvoice"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Frasberg voice returns 503; TTS falls back to Piper local. Clone speak uses vendored OpenVoice. STS voice=clone requires auth (400 without). Sample WAVs at /app/tests/src.wav and ref.wav."
+  - task: "Saved voice takes CRUD"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Takes persist in db.voice_takes + GridFS for logged-in users. Verify create/list/stream/delete."
+
+metadata:
+  created_by: "main_agent"
+  version: "2.0"
+  test_sequence: 0
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Video generation (local keyframe engine)"
+    - "Music generation (local MusicGen)"
+    - "Auth (register/login/me, JWT, lockout)"
+    - "Image generate/edit/upscale with Frasberg->local fallback"
+    - "3D Studio generate + glb fetch"
+  stuck_tasks: []
+  test_all: true
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "main"
+      message: >
+        Fresh import of the owner's Luchii app. Real Frasberg keys are in backend/.env. IMPORTANT ENV NOTE:
+        heavy jobs (video/music/3D) run on CPU and can take 1-4 minutes; the preview may 502 if 3+ heavy jobs
+        overlap on the 2-CPU box, so run with -n 0 and avoid overlapping heavy jobs. Admin/test login:
+        test@luchii.ai / Test1234!. Please run a full backend pass (high priority first). Special focus:
+        confirm /api/video produces a REAL local MP4 via /api/media (not a Frasberg sample URL), and /api/music
+        returns a real WAV. Do NOT change any .env or key values.
