@@ -5,11 +5,11 @@ import uuid
 import pytest
 import requests
 
-BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") if os.environ.get("REACT_APP_BACKEND_URL") else "https://luchii-build.preview.emergentagent.com"
+BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") if os.environ.get("REACT_APP_BACKEND_URL") else "https://fullstack-preview-65.preview.emergentagent.com"
 API = f"{BASE_URL}/api"
 
 TEST_EMAIL = "test@luchii.ai"
-TEST_PASS = "test1234"
+TEST_PASS = "Test1234!"
 
 
 @pytest.fixture(scope="session")
@@ -268,10 +268,11 @@ class TestVoiceClone:
 
 
 
-# ---------- engines status ----------
+# ---------- engines status (admin only) ----------
 class TestEnginesStatus:
-    def test_status_shape(self, session):
-        r = session.get(f"{API}/engines/status", params={"refresh": "true"})
+    def test_status_shape(self, session, token):
+        r = session.get(f"{API}/engines/status", params={"refresh": "true"},
+                        headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 200
         d = r.json()
         assert "checked_at" in d and isinstance(d.get("engines"), list)
@@ -281,8 +282,13 @@ class TestEnginesStatus:
             assert e["status"] in ("online", "degraded", "offline")
             assert "name" in e and "detail" in e and "latency_ms" in e
 
-    def test_local_engines_online(self, session):
+    def test_status_unauth(self, session):
         r = session.get(f"{API}/engines/status")
+        assert r.status_code in (401, 403)
+
+    def test_local_engines_online(self, session, token):
+        r = session.get(f"{API}/engines/status",
+                        headers={"Authorization": f"Bearer {token}"})
         d = r.json()
         by_id = {e["id"]: e for e in d["engines"]}
         assert by_id["local_voice"]["status"] == "online", by_id["local_voice"]

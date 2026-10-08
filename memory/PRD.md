@@ -28,3 +28,6 @@ Import and clone an exact copy of luchii-ai.com (tools, files, database, feature
 - Per-feature key routing via FRASBERG_KEY_ROUTES.
 - The /status page and /api/engines/status are admin-only (ADMIN_EMAILS) and the Status link is no longer in the public nav.
 - The homepage showcase only shows generations with featured=true and otherwise falls back to the curated graphics.
+
+## Update (2026-10, import)
+- Restored from GitHub frasberg-code/luchii-tools into a new pod. Backend .env restored, frontend uses this pod URL. Deps installed (emergentintegrations/litellm skipped, not used). Smoke tests passed (iteration_5).

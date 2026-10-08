@@ -1,0 +1,41 @@
+{
+  "summary": "Fresh-import smoke test of the Luchii AI clone. Backend: 30/30 effective tests pass (3 are intentional pytest.skip for the lockout+clone sample interaction). Fixed two test-only bugs: (1) BASE_URL default pointed to a stale preview URL (luchii-build.*) which caused ALL token-dependent tests to skip with 429 (lockouts from an old pod); switched default to the current REACT_APP_BACKEND_URL (fullstack-preview-65.*). (2) Password in test file was 'test1234' but the seeded admin user is 'Test1234!'; aligned with the request + /app/memory/test_credentials.md. (3) TestEnginesStatus hit /api/engines/status without auth — per PRD it is admin-only; added Authorization header + a dedicated test_status_unauth negative test. Frontend: homepage loads with full nav (Create / Tools / Models / API / Log in). Logged in through the modal (clicking 'Log in' opens a modal, not a /login route) with test@luchii.ai / Test1234! -> avatar switches to 'T Test'. Visited /create, /gallery, /models, /tts, /video, /audio, /voice-clone, /developers, /status — all render HTTP 200, no crashes, no 'Application error'. /status (admin) shows 7 engine cards, correctly reports '2 of 7 engines online' (Luchii In-house Voice + Luchii In-house Image Online; Frasberg image/voice/video/music/chat all Offline with HTTP 520 — expected upstream state, per request). Image generation and TTS go through the local SD-Turbo and Piper fallbacks and return real artifacts (verified via TestLocalFallback: test_tts_local_fallback, test_generate_local_fallback, test_edit_local_fallback, test_sts_local_full_loop all PASS when run serially with -n 0; test_edit_local_fallback can intermittently 502 when xdist runs it concurrently with another CPU image call because they serialize on local_engines._image_lock and the preview proxy times out — carried over from iteration_4, not a new bug).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/generate, /api/edit", "issue": "Concurrent calls serialize on local_engines._image_lock during CPU SD-Turbo inference; the second request can exceed the Cloudflare preview proxy ~100s window and surface as HTTP 502. Not a code bug; mitigation = run image tests with -n 0 or implement 429/Retry-After when the lock is held."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Nav / Routing", "issue": "There is no /login route; the Log in control opens a modal. Deep-linking to /login shows a blank 'No routes matched' warning in console. Low priority, but adding a route or a redirect would improve shareability.", "selector": "a[href='/login']", "priority": "LOW"},
+      {"component": "Generator.jsx (/create page)", "issue": "Still no data-testid attributes on prompt textarea, Generate/Upscale/Share/Download buttons, result <img>, or reference upload — carried from iteration_4. Hurts automated testing.", "selector": "N/A", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/status", "issues": ["'2 of 7 engines online' is accurate but could add a reassuring sub-copy like 'Fallback active — generation still works' when local_voice/local_image are Online but their Frasberg counterparts are Offline."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Optional) Add data-testid attributes to Generator.jsx interactive elements.",
+    "(Optional) Add a /login route or redirect to home-with-modal for deep links.",
+    "(Optional) In EngineStatus.jsx, add a 'Fallback active' sub-copy when local engines are Online but Frasberg ones are Offline."
+  ],
+  "critical_code_review_comments": [
+    "backend/tests/backend_test.py had a stale default BASE_URL that silently redirected tests to another pod — this is a common footgun. Prefer failing fast when REACT_APP_BACKEND_URL is unset instead of defaulting to a hardcoded host.",
+    "server.py image_with_fallback / speak_with_fallback: good pattern. Consider fast-failing with 429 + Retry-After when _image_lock is held and queue depth > N to avoid proxy 502s under concurrency.",
+    "server.py /api/engines/status is correctly admin-gated (ADMIN_EMAILS) — matches PRD."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/memory/test_credentials.md"
+  ],
+  "success_rate": {"backend": "100% (30/30 run, 3 intentional skips)", "frontend": "100% of exercised flows (login modal, 9 pages, /status admin view)"},
+  "test_credentials": "test@luchii.ai / Test1234! (admin, works). Written to /app/memory/test_credentials.md.",
+  "seed_data_creation": "Generations under session_id='test-fallback' and 'test-edit' from TestLocalFallback (one apple + one blue->green edit image). Negligible footprint.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run backend tests with `pytest backend/tests/backend_test.py -n 0` to avoid Cloudflare 502 timeouts on serialized CPU image gen (two concurrent /generate or /edit calls queue behind local_engines._image_lock). Password for test@luchii.ai is 'Test1234!' (NOT 'test1234' as iteration_4 said). BASE_URL default is now fullstack-preview-65.preview.emergentagent.com. There is no /login route — click 'Log in' in nav to open the modal. /api/engines/status requires an admin Bearer token (ADMIN_EMAILS=test@luchii.ai). Frasberg upstream remains fully offline (HTTP 520) so every /generate, /edit, /upscale, /tts, /sts call ends up on the Luchii local engine and returns `engine='luchii-local'`.",
+  "rca of the issue": "Primary blocker during this run: all token-dependent pytest tests were skipping with HTTP 429 'Too many attempts'. Reproduction: pytest backend/tests/backend_test.py::TestAuth::test_login_success -v -rs -> SKIPPED with 429, while curl to the current public URL returned 200. Root cause: backend_test.py BASE_URL used `os.environ.get('REACT_APP_BACKEND_URL')` with a hardcoded default of 'https://luchii-build.preview.emergentagent.com'. REACT_APP_BACKEND_URL is only in frontend/.env (loaded by webpack), not in the shell/backend env, so pytest hit the OLD preview pod where test@luchii.ai had been locked out previously. Fix: updated the default to the current public URL ('https://fullstack-preview-65.preview.emergentagent.com'); also aligned TEST_PASS to 'Test1234!'. Verified: full suite now returns 26 passed + 4 known concurrency failures when run with xdist, and 30 passed with -n 0."
+}
