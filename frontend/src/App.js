@@ -15,6 +15,7 @@ import Studio from "./pages/Studio";
 import EngineStatus from "./pages/EngineStatus";
 import SpeechToSpeech from "./pages/SpeechToSpeech";
 import VoiceClone from "./pages/VoiceClone";
+import Login from "./pages/Login";
 
 function App() {
   return (
@@ -36,6 +37,8 @@ function App() {
               <Route path="/status" element={<EngineStatus />} />
               <Route path="/sts" element={<SpeechToSpeech />} />
               <Route path="/voice-clone" element={<VoiceClone />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Login mode="register" />} />
             </Routes>
           </FrasbergStarfieldLayout>
         </BrowserRouter>

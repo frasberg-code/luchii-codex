@@ -143,6 +143,10 @@ def upscale_image(image_b64: str) -> str:
     return edit_image("high resolution, sharp fine detail, crisp, best quality", image_b64, strength=0.3, longest=768)
 
 
+def image_busy() -> bool:
+    return _image_lock.locked()
+
+
 def status() -> dict:
     voice_ready = any((MODELS_DIR / "piper").glob("*.onnx")) if (MODELS_DIR / "piper").exists() else False
     image_ready = (MODELS_DIR / "hf").exists() and any((MODELS_DIR / "hf").rglob("*.safetensors"))

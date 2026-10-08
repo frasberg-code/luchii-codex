@@ -160,6 +160,9 @@ async def image_with_fallback(frasberg_payload: dict, local_fn, *args) -> tuple:
         return await frasberg_image(frasberg_payload), "frasberg"
     except HTTPException as e:
         logger.warning("Frasberg image failed (%s); using Luchii in-house image engine", e.detail)
+    if local_engines.image_busy():
+        raise HTTPException(status_code=429, detail="Luchii is finishing another image. Yours is in the queue.",
+                            headers={"Retry-After": "8"})
     try:
         return await asyncio.to_thread(local_fn, *args), "luchii-local"
     except Exception as e:  # noqa: BLE001

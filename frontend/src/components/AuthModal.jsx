@@ -58,24 +58,24 @@ export default function AuthModal({ open, onOpenChange, defaultMode = "login" })
           {mode === "register" && (
             <div className="space-y-1.5">
               <Label htmlFor="name">Name</Label>
-              <Input id="name" value={name} onChange={(e) => setName(e.target.value)}
+              <Input id="name" data-testid="auth-name-input" value={name} onChange={(e) => setName(e.target.value)}
                 required placeholder="Jane Creator"
                 className="bg-black/40 border-white/10 focus-visible:ring-[#00F0FF]" />
             </div>
           )}
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+            <Input id="email" data-testid="auth-email-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
               required placeholder="you@example.com"
               className="bg-black/40 border-white/10 focus-visible:ring-[#00F0FF]" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="password">Password</Label>
-            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+            <Input id="password" data-testid="auth-password-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
               required minLength={6} placeholder="••••••"
               className="bg-black/40 border-white/10 focus-visible:ring-[#00F0FF]" />
           </div>
-          <Button type="submit" disabled={busy}
+          <Button data-testid="auth-submit-btn" type="submit" disabled={busy}
             className="w-full h-11 bg-[#00F0FF] text-black hover:bg-[#00d4de] font-semibold rounded-full">
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : (mode === "register" ? "Create account" : "Log in")}
           </Button>
@@ -83,7 +83,7 @@ export default function AuthModal({ open, onOpenChange, defaultMode = "login" })
 
         <p className="text-sm text-neutral-400 text-center mt-2">
           {mode === "register" ? "Already have an account?" : "New to Luchii AI?"}{" "}
-          <button
+          <button data-testid="auth-toggle-mode-btn"
             onClick={() => setMode(mode === "register" ? "login" : "register")}
             className="text-[#00F0FF] hover:underline font-medium"
           >

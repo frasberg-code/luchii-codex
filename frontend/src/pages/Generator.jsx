@@ -23,6 +23,20 @@ function getSessionId() {
   return sid;
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function postQueued(url, body, headers, onQueued) {
+  for (;;) {
+    try {
+      return await axios.post(url, body, { headers });
+    } catch (e) {
+      if (e?.response?.status !== 429) throw e;
+      onQueued(true);
+      await sleep((Number(e.response.headers?.["retry-after"]) || 8) * 1000);
+    }
+  }
+}
+
 export default function Generator() {
   const { user, authHeader } = useAuth();
   const navigate = useNavigate();
@@ -36,6 +50,13 @@ export default function Generator() {
   const [refImage, setRefImage] = useState(null); // data URL of uploaded reference
   const [loading, setLoading] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
+  const [queued, setQueued] = useState(false);
+  const markQueued = (q) => {
+    setQueued((prev) => {
+      if (q && !prev) toast("Your image is in the queue", { description: "Luchii is finishing another image. Yours starts next." });
+      return q;
+    });
+  };
   const [image, setImage] = useState(null);
   const [resultId, setResultId] = useState(null);
   const [history, setHistory] = useState([]);
@@ -106,13 +127,11 @@ export default function Generator() {
     try {
       let res;
       if (mode === "image") {
-        res = await axios.post(`${API}/edit`,
-          { prompt, image_base64: refImage, session_id: getSessionId() },
-          { headers: authHeader });
+        res = await postQueued(`${API}/edit`,
+          { prompt, image_base64: refImage, session_id: getSessionId() }, authHeader, markQueued);
       } else {
-        res = await axios.post(`${API}/generate`,
-          { prompt, style, aspect_ratio: aspect, session_id: getSessionId() },
-          { headers: authHeader });
+        res = await postQueued(`${API}/generate`,
+          { prompt, style, aspect_ratio: aspect, session_id: getSessionId() }, authHeader, markQueued);
       }
       const url = res.data.image_base64;
       setImage(url);
@@ -123,6 +142,7 @@ export default function Generator() {
       toast.error(e?.response?.data?.detail || "Generation failed. Please try again.");
     } finally {
       setLoading(false);
+      setQueued(false);
     }
   };
 
@@ -130,9 +150,8 @@ export default function Generator() {
     if (!image) return;
     setUpscaling(true);
     try {
-      const res = await axios.post(`${API}/upscale`,
-        { image_base64: image, session_id: getSessionId(), prompt: prompt || "Upscaled" },
-        { headers: authHeader });
+      const res = await postQueued(`${API}/upscale`,
+        { image_base64: image, session_id: getSessionId(), prompt: prompt || "Upscaled" }, authHeader, markQueued);
       const url = res.data.image_base64;
       setImage(url);
       setResultId(res.data.id);
@@ -142,6 +161,7 @@ export default function Generator() {
       toast.error(e?.response?.data?.detail || "Upscale failed. Please try again.");
     } finally {
       setUpscaling(false);
+      setQueued(false);
     }
   };
 
@@ -230,7 +250,7 @@ export default function Generator() {
                   <Dice5 className="w-3.5 h-3.5" /> Surprise me
                 </button>
               </div>
-              <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)}
+              <Textarea data-testid="prompt-input" value={prompt} onChange={(e) => setPrompt(e.target.value)}
                 placeholder={mode === "image"
                   ? "turn this into a watercolor painting..."
                   : "A cinematic portrait of an astronaut in neon rain..."}
@@ -268,7 +288,7 @@ export default function Generator() {
               </>
             )}
 
-            <Button onClick={handleGenerate} disabled={loading}
+            <Button data-testid="generate-btn" onClick={handleGenerate} disabled={loading}
               className="w-full h-11 bg-[#00F0FF] text-black hover:bg-[#00d4de] font-semibold rounded-full">
               {loading ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generating...</>)
                 : (<><Wand2 className="w-4 h-4 mr-2" /> {mode === "image" ? "Remix image" : "Generate"}</>)}
@@ -285,20 +305,25 @@ export default function Generator() {
         <div className="space-y-6 lg:order-1">
           <div className="rounded-2xl border border-white/10 bg-[#1E2327] aspect-video grid place-items-center overflow-hidden relative">
             {loading ? (
-              <LogoLoader
-                label={mode === "image" ? "Remixing your image..." : "Dreaming up your image..."}
-                sublabel="Powered by Luchii AI"
-              />
+              <div data-testid={queued ? "image-queue-notice" : "image-loading"}>
+                <LogoLoader
+                  label={queued ? "Your image is in the queue..." : mode === "image" ? "Remixing your image..." : "Dreaming up your image..."}
+                  sublabel={queued ? "Luchii is finishing another image. Yours starts next." : "Powered by Luchii AI"}
+                />
+              </div>
             ) : image ? (
               <>
-                <img src={image} alt="Generated" className="w-full h-full object-contain" />
+                <img data-testid="result-image" src={image} alt="Generated" className="w-full h-full object-contain" />
                 {upscaling && (
                   <div className="absolute inset-0 bg-black/70 backdrop-blur-sm grid place-items-center">
-                    <LogoLoader label="Enhancing to 4K..." sublabel="AI detail re-render" />
+                    <div data-testid={queued ? "upscale-queue-notice" : "upscale-loading"}>
+                      <LogoLoader label={queued ? "Your upscale is in the queue..." : "Enhancing to 4K..."}
+                        sublabel={queued ? "Luchii is finishing another image. Yours starts next." : "AI detail re-render"} />
+                    </div>
                   </div>
                 )}
                 <div className="absolute bottom-4 right-4 flex gap-2">
-                  <button onClick={handleUpscale} disabled={upscaling}
+                  <button data-testid="upscale-btn" onClick={handleUpscale} disabled={upscaling}
                     className="inline-flex items-center gap-1.5 rounded-full bg-[#00F0FF] text-black px-4 py-2 text-sm font-semibold hover:bg-[#00d4de] disabled:opacity-60">
                     <Maximize2 className="w-4 h-4" /> Upscale to 4K
                   </button>
