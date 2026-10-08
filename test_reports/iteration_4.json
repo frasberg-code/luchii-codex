@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 4 (Luchii in-house engine fallback). Verified Frasberg->local fallback for image + voice end-to-end. Backend: 33/33 pytest pass serially (-n 0). Added 5 new tests (TestLocalFallback + local_engines_online); existing suite extended to assert engine field in /generate, /edit, /tts responses, and full /tts->/sts round-trip using real Piper-generated WAV. Found and FIXED one real bug: /sts fallback path did not wrap local_engines.transcribe() in try/except, causing undecodable audio bytes to produce 500 instead of a graceful 4xx. Patched server.py speech_to_speech() to raise HTTP 400 'Could not transcribe audio: <ErrorClass>' when local STT raises. Frontend: /status shows 7 engine cards; engine-card-local_voice and engine-card-local_image both Online with details 'Piper voices running on Luchii server' / 'SD-Turbo loaded on Luchii server (CPU)'. /create text-to-image: entered 'a small red apple on a white table', clicked Generate, a real 431KB PNG rendered in ~45s via luchii-local; Upscale/Share/Download buttons visible. /tts: typed text, picked Nova, Generate -> audio element playable (data URL, WAV bytes). /sts: uploaded a Piper-generated WAV, picked Onyx -> sts-result shows quoted transcription (whisper 'base' heard 'testing speech-to-speech on Luchiai') and sts-result audio plays Onyx voice. Backend engine-id probes still report upstream Frasberg as offline (HTTP 520), which is expected and triggers the local fallback path on actual /generate, /edit, /upscale, /tts, /sts calls so users always get a result.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/sts", "issue": "FIXED in this iteration — fallback to local whisper now catches exceptions and returns 400 instead of 500 when audio is undecodable."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "TextToSpeech.jsx (L41)", "issue": "Hard-codes 'data:audio/mp3;base64,...' regardless of mime from backend. Luchii local returns audio/wav; browsers tolerate it but the Download MP3 button saves a WAV re-labelled .mp3. Use `data:${res.data.mime || 'audio/mp3'};base64,` and derive the download extension/filename from mime.", "selector": "[data-testid=\"tts-result\"] audio", "priority": "LOW"},
+      {"component": "Generator.jsx (/create page)", "issue": "No data-testid attributes on key interactive elements (prompt textarea, Generate button, mode toggle buttons, result <img>, Upscale/Share/Download buttons, reference upload input). This hurts automated testing. Add e.g. create-prompt-input, create-generate-btn, create-mode-text, create-mode-image, create-result-image, create-upscale-btn, create-share-btn, create-download-btn, create-ref-upload-input.", "selector": "N/A", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/status header", "issues": ["Summary line reads '2 of 7 engines online' which is accurate for current Frasberg outage but may confuse users unaware that fallback engines keep features working. Consider mentioning 'Fallback active — generation still works' when any Frasberg engine is offline but a corresponding Luchii local engine is online."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Optional) Add data-testid attributes to Generator.jsx interactive elements.",
+    "(Optional) Fix TextToSpeech.jsx to honor response.mime for the audio src and download filename.",
+    "(Optional) In EngineStatus.jsx, show a reassuring sub-copy when local_voice/local_image are online but their Frasberg counterparts are offline."
+  ],
+  "critical_code_review_comments": [
+    "server.py speech_to_speech(): FIXED — now wraps local_engines.transcribe in try/except and returns HTTP 400 instead of 500 on decoder failure.",
+    "server.py image_with_fallback / speak_with_fallback: good pattern, but each image request serializes on local_engines._image_lock. Under concurrent load the Cloudflare preview proxy returns 502 while a slow request is queued (observed with xdist parallel test). Consider adding a 503/429 fast-fail with Retry-After when the lock is held and request count exceeds N, or at least logging queue depth.",
+    "local_engines.py synthesize(): writes Piper output through python 'wave' module which may set wrong sample width for some voices. Response mime is correctly 'audio/wav' from backend, but TextToSpeech.jsx ignores it (see UI bug).",
+    "local_engines.transcribe(): faster-whisper 'base' model misheard 'Luchii' as 'Luchiai'. Not a bug, but if branding matters consider an initial_prompt='Luchii' hint to bias decoding."
+  ],
+  "updated_files": [
+    "/app/backend/server.py",
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100% (33/33 serial)", "frontend": "100% of exercised flows (/status, /tts, /create text-to-image, /sts)"},
+  "test_credentials": "test@luchii.ai / test1234 (works).",
+  "seed_data_creation": "Generated an apple image and 2 TTS WAVs under session_id='test-fallback' and 'test-edit' — negligible footprint, safe to leave.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "backend_test.py: 33 tests, run with `-n 0` for CPU image gen to avoid Cloudflare 502 proxy timeouts (two concurrent /generate or /edit calls serialize behind _image_lock and the second request exceeds the preview proxy's ~100s window). TestLocalFallback::test_generate_local_fallback and test_edit_local_fallback are slow (~60-90s each). Local engines health endpoints: /api/engines/status returns engines[].id in {image, voice, video, music, chat, local_voice, local_image}. Fallback is triggered when Frasberg returns anything in 4xx/5xx — currently Frasberg returns 502/520 so every /generate, /edit, /upscale, /tts call ends up on luchii-local. Response has 'engine' field = 'frasberg' | 'luchii-local'. /create page lacks data-testid on prompt/button/image — use get_by_role('button', name='Generate') and textarea selectors.",
+  "rca of the issue": "Bug: POST /api/sts returned HTTP 500 when the uploaded file was not decodable by faster-whisper. Reproduction: curl -F file=@fake.webm /api/sts (fake/non-audio bytes) -> 500 Internal Server Error. Root cause: server.py:speech_to_speech caught HTTPException from Frasberg but then called local_engines.transcribe without exception handling; faster-whisper raised a decoding exception which bubbled up as 500. Fix: wrap local_engines.transcribe call in try/except Exception and raise HTTPException(status_code=400, detail='Could not transcribe audio: <ExceptionName>'). Verified: test_sts_graceful_upstream now passes (previously 500)."
+}

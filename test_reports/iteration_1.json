@@ -1,0 +1,37 @@
+{
+  "summary": "Backend: 16/17 pytest passed. Auth, generate/tts graceful 424, showcase/generations/share without _id, video + music jobs end-to-end completed successfully, music audio proxy returns bytes. Frontend: home renders, login modal works (token stored in localStorage.luchii_token), /create submits POST /api/generate and shows toast 'Frasberg: Frasberg returned HTTP 502' (graceful), /gallery accessible when logged in, /video page loads, /s/bad-id shows 'This creation isn't available.'",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/auth/login", "issue": "Brute-force lockout did not trigger during pytest: 6 consecutive bad logins all returned 401 (expected 429 on 6th). Likely cause: behind K8s ingress `request.client.host` is a shared proxy IP, but a unique email keyed the identifier so same identifier was reused across 6 attempts — the lockout should have fired. Possible bug: `locked_until > now_iso()` ISO-string compare may fail when stored string has different timezone format than `now_iso()`, OR the attempts doc read returns None due to upsert race. Recommend inspecting db.login_attempts after a failing sequence."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Document", "issues": ["<title> is 'Emergent | Fullstack App' instead of 'Luchii AI' — breaks clone fidelity and SEO."]},
+      {"screen": "AuthModal / Dialog", "issues": ["Radix DialogContent missing Description / aria-describedby (a11y warning in console)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Investigate login lockout: verify timezone format of stored locked_until vs now_iso() comparison; consider count-only lockout gate when count>=5 and (locked_until parsed) > now.",
+    "Set document <title> to 'Luchii AI' in /app/frontend/public/index.html.",
+    "Add DialogDescription (or aria-describedby) to AuthModal and any other Radix Dialogs to fix a11y warning."
+  ],
+  "critical_code_review_comments": [
+    "server.py line 220: string comparison `att.get('locked_until','') > now_iso()` relies on identical ISO formatting — fragile; parse to datetime before compare.",
+    "Login identifier uses `request.client.host` which, behind K8s ingress, is the proxy IP — all users share it. Should prefer X-Forwarded-For (first entry) + email, otherwise lockouts could affect other users on same proxy.",
+    "generate/edit/upscale save base64 images directly into MongoDB documents — fine for MVP but will bloat the collection fast; consider external storage.",
+    "CORS allow_credentials=True combined with allow_origins='*' (default) is spec-invalid; browsers reject credentialed requests to wildcard. Current prod .env uses CORS_ORIGINS='*' — set explicit origins for production."
+  ],
+  "updated_files": ["/app/backend/tests/__init__.py", "/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "94% (16/17)", "frontend": "100% of flows exercised"},
+  "test_credentials": "test@luchii.ai / test1234 (works, user existed or auto-registered).",
+  "seed_data_creation": "None. Video + music jobs created real generations/jobs docs in Mongo.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Pytest file at /app/backend/tests/backend_test.py uses pytest-xdist (configured in pytest.ini). Frasberg image & TTS endpoints return 502/503 upstream — backend converts to 424 and UI toasts correctly. Video + music jobs complete in ~10-30s on Frasberg. Login lockout test is the single failure; see RCA above. Frontend uses localStorage key 'luchii_token' for Bearer auth, not httpOnly cookies.",
+  "rca of the issue": "Lockout 429 never returned despite 6 failed logins to a unique email. Hypothesis: locked_until stored as isoformat() with '+00:00' suffix compared via `>` to another isoformat() string — if seconds precision drifts within a single request handler the comparison still passes, so more likely the attempt doc isn't being read fresh on consecutive upserts, OR count>=5 check happens before the 6th increment but attempts counter never reaches 5 because the first failed login upsert runs AFTER the lockout check (so on request N the attempt doc has count=N-1). On the 6th request count=5 so condition should fire — unless the stored doc's locked_until <= now_iso() due to clock skew between workers. Mitigation: parse locked_until to datetime and compare, OR simplify: if count>=5 then lock for 15min regardless."
+}

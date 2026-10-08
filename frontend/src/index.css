@@ -1,0 +1,134 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #12171B;
+  color: #F8F9FA;
+  /* Native app feel: no text-drag / no page-drag, but scrolling still works */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  overscroll-behavior-y: none;
+}
+
+/* Re-enable selection/typing where it matters */
+input,
+textarea,
+[contenteditable="true"] {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  user-select: text;
+}
+
+/* Prevent ghost image-dragging that feels like "dragging the page" */
+img,
+a,
+canvas {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+img {
+  -webkit-touch-callout: none;
+}
+
+code {
+  font-family: 'JetBrains Mono', source-code-pro, Menlo, Monaco, monospace;
+}
+
+.font-display {
+  font-family: 'Sora', -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+::selection {
+  background: #00F0FF;
+  color: #12171B;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #0c0c0e; }
+::-webkit-scrollbar-thumb { background: #26262b; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3a42; }
+
+/* Marquee animations */
+@keyframes marquee-left {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-marquee {
+  animation: marquee-left 30s linear infinite;
+}
+.animate-marquee-slow {
+  animation: marquee-left 45s linear infinite;
+}
+.marquee-pause:hover .animate-marquee,
+.marquee-pause:hover .animate-marquee-slow {
+  animation-play-state: paused;
+}
+
+/* Fade-up entrance */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fadeUp 0.7s cubic-bezier(0.22,1,0.36,1) both; }
+
+/* Logo loader animations */
+@keyframes logo-float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-8px) scale(1.04); }
+}
+@keyframes ring-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes ring-pulse {
+  0% { transform: scale(0.9); opacity: 0.7; }
+  70% { transform: scale(1.6); opacity: 0; }
+  100% { opacity: 0; }
+}
+.logo-float { animation: logo-float 2.4s ease-in-out infinite; }
+.ring-spin { animation: ring-spin 2.2s linear infinite; }
+.ring-pulse { animation: ring-pulse 1.8s ease-out infinite; }
+
+.grain {
+  background-image: radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 3px 3px;
+}
+
+@layer base {
+  :root {
+    --background: 204 20% 9%;
+    --foreground: 210 17% 98%;
+    --card: 200 12% 14%;
+    --card-foreground: 210 17% 98%;
+    --popover: 200 12% 14%;
+    --popover-foreground: 210 17% 98%;
+    --primary: 184 100% 50%;
+    --primary-foreground: 200 15% 10%;
+    --secondary: 202 12% 19%;
+    --secondary-foreground: 210 17% 98%;
+    --muted: 202 12% 19%;
+    --muted-foreground: 205 8% 65%;
+    --accent: 202 12% 19%;
+    --accent-foreground: 210 17% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 17% 98%;
+    --border: 202 12% 22%;
+    --input: 202 12% 22%;
+    --ring: 184 100% 50%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
+}

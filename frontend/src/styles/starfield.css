@@ -1,0 +1,81 @@
+/* Global Frasberg / Luchii AI starfield background
+   Pure-CSS animated starfield — no external image asset required. */
+
+.starfield {
+  position: fixed;
+  inset: 0;
+  z-index: -10;
+  background-color: #0b0f12;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Base vertical depth gradient + nebula glow (Signal Cyan + Nebula Purple) */
+.starfield::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(900px 500px at 78% 8%, rgba(0, 240, 255, 0.10), transparent 60%),
+    radial-gradient(1000px 600px at 20% 20%, rgba(108, 74, 255, 0.10), transparent 60%),
+    linear-gradient(180deg, #0b0f12 0%, #12171B 55%, #0b0f12 100%);
+}
+
+/* Star layers */
+.stars {
+  position: absolute;
+  inset: -50%;
+  width: 200%;
+  height: 200%;
+  background-repeat: repeat;
+  will-change: transform, opacity;
+}
+
+.stars-sm {
+  background-image:
+    radial-gradient(1px 1px at 20px 30px, rgba(255,255,255,0.9), transparent),
+    radial-gradient(1px 1px at 90px 120px, rgba(255,255,255,0.7), transparent),
+    radial-gradient(1px 1px at 160px 60px, rgba(255,255,255,0.8), transparent),
+    radial-gradient(1px 1px at 130px 180px, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1px 1px at 50px 160px, rgba(255,255,255,0.75), transparent);
+  background-size: 220px 220px;
+  animation: star-drift 140s linear infinite, star-twinkle 6s ease-in-out infinite;
+  opacity: 0.7;
+}
+
+.stars-md {
+  background-image:
+    radial-gradient(1.6px 1.6px at 60px 80px, rgba(255,255,255,0.95), transparent),
+    radial-gradient(1.6px 1.6px at 200px 150px, rgba(0,240,255,0.6), transparent),
+    radial-gradient(1.6px 1.6px at 300px 40px, rgba(255,255,255,0.85), transparent),
+    radial-gradient(2px 2px at 380px 220px, rgba(108,74,255,0.55), transparent);
+  background-size: 420px 420px;
+  animation: star-drift 90s linear infinite reverse, star-twinkle 8s ease-in-out infinite;
+  opacity: 0.55;
+}
+
+.starfield-glow {
+  position: absolute;
+  top: -20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 900px;
+  height: 700px;
+  border-radius: 9999px;
+  background: rgba(0, 240, 255, 0.06);
+  filter: blur(160px);
+}
+
+@keyframes star-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-120px, -80px, 0); }
+}
+
+@keyframes star-twinkle {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.8; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stars-sm, .stars-md { animation: none; }
+}

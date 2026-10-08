@@ -1,0 +1,97 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# IDE and editors
+.idea/
+.vscode/
+
+# Dependencies
+node_modules/
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Testing
+/coverage
+
+# Next.js
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Production builds
+/build
+dist/
+dist
+
+# Environment files (comprehensive coverage)
+
+*token.json*
+*credentials.json*
+
+# Logs and debug files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dump.rdb
+
+# System files
+.DS_Store
+*.pem
+
+# Python
+__pycache__/
+*pyc*
+venv/
+.venv/
+
+# Development tools
+chainlit.md
+.chainlit
+.ipynb_checkpoints/
+.ac
+
+# Deployment
+.vercel
+
+# Data and databases
+agenthub/agents/youtube/db
+
+# Archive files and large assets
+**/*.zip
+**/*.tar.gz
+**/*.tar
+**/*.tgz
+*.pack
+*.deb
+*.dylib
+
+# Build caches
+.cache/
+
+memory/test_credentials.md
+
+# Mobile development
+android-sdk/
+
+# overlay black-box crash/user-report dumps — session data, never history
+**/.emergent/recordings/
+
+backend/models/
+backend/models/hf/models--stabilityai--sd-turbo/blobs/438da6db739c8651ec4152341b8133d6896db452ea27afdb6b9b0344f0c40532
+backend/models/hf/models--stabilityai--sd-turbo/blobs/2aa1f43011b553a4cba7f37456465cdbd48aab7b54b9348b890e8058ea7683ec
+backend/models/hf/models--stabilityai--sd-turbo/blobs/67e013543d4fac905c882e2993d86a2d454ee69dc9e8f37c0c23d33a48959d15
+backend/models/whisper/models--Systran--faster-whisper-base/blobs/d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9
+.env
+.env.*
+*.env
+credentials.json
+*.key
+.credentials
