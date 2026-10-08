@@ -1,8 +1,8 @@
-// Mock data for Luchii AI — replaced by backend where noted in contracts.md
+// Mock data for Luchii — replaced by backend where noted in contracts.md
 
 export const brand = {
-  name: "Luchii AI",
-  logo: "https://customer-assets-eiarnc6j.emergentagent.net/job_luchii-generate/artifacts/zpvmnqfc_FRASBERG%20AI%20LUCHII%20LOGO%20TRANSPARENT%203.png",
+  name: "Luchii",
+  logo: "/luchii-logo.png",
 };
 
 export const navLinks = [
@@ -83,10 +83,10 @@ export const tools = [
   { title: "Speech to Speech", desc: "Convert one voice into another, instantly", route: "/sts" },
   { title: "Voice Cloning", desc: "Clone your voice and speak any text with it", route: "/voice-clone" },
   { title: "Audio Studio", desc: "Generate music, sound effects, and audio beds", route: "/audio" },
-  { title: "3D Studio", desc: "Generate 3D objects and assets from a prompt", mode: "text", preset: "Detailed 3D asset render, isometric view, studio lighting, of " },
+  { title: "3D Studio", desc: "Generate 3D objects and assets from a prompt", route: "/3d" },
   { title: "Spaces Builder", desc: "Build interactive 3D worlds and scenes", mode: "text", preset: "Immersive explorable 3D world scene, wide establishing shot, of " },
   { title: "Change Camera Angle", desc: "Reframe any shot from a new angle", mode: "image", preset: "Reframe this shot from a new camera angle while keeping the same subject and scene" },
-  { title: "All tools", desc: "Explore the full Luchii AI toolset", mode: "text" },
+  { title: "All tools", desc: "Explore the full Luchii toolset", mode: "text" },
 ];
 
 export const useCases = [
@@ -109,10 +109,10 @@ export const pricing = [
 ];
 
 export const faqs = [
-  { q: "What is Luchii AI?", a: "Luchii AI is a full creative platform for images — generate, remix (image-to-image), and upscale, all powered by leading AI models in one place." },
-  { q: "Which AI models power Luchii AI?", a: "Luchii AI runs on top-tier image models and is always accessible and operational — you get the best models with the easiest workflow, no switching required." },
+  { q: "What is Luchii?", a: "Luchii is a full creative platform for images — generate, remix (image-to-image), and upscale, all powered by Frasberg." },
+  { q: "What powers Luchii?", a: "Every Luchii tool and model is powered by Frasberg — image, video, voice, music and 3D, all in one place." },
   { q: "Who owns the content I create?", a: "You do. Everything you generate belongs to you, and it comes with a full commercial AI license." },
-  { q: "Can I use Luchii AI for commercial work?", a: "Yes. The content you generate includes a full commercial license so you can use it in real projects." },
+  { q: "Can I use Luchii for commercial work?", a: "Yes. The content you generate includes a full commercial license so you can use it in real projects." },
 ];
 
 export const footerCols = [
@@ -157,6 +157,7 @@ export const modelFamilies = [
       { name: "Luchii Prime", tag: "Enhance", desc: "AI enhancement re-render for crisp, high-resolution 4K detail.", caps: ["Upscale"], mode: "image", img: "https://images.unsplash.com/photo-1620121692029-d088224ddc74?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwyfHwzRCUyMGFic3RyYWN0fGVufDB8fHx8MTc4NjQ1MTAwMnww&ixlib=rb-4.1.0&q=85" },
       { name: "Luchii Dreamline", tag: "Artistic", desc: "Expressive, painterly styles and bold, vivid color.", caps: ["Text to Image"], mode: "text", img: "https://images.unsplash.com/photo-1568038479111-87bf80659645?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njd8MHwxfHNlYXJjaHwzfHxjaW5lbWF0aWMlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODYyNzY4NTF8MA&ixlib=rb-4.1.0&q=85" },
       { name: "Luchii Vision", tag: "Concept", desc: "Concept art and stylized worlds with striking composition.", caps: ["Text to Image"], mode: "text", img: "https://images.pexels.com/photos/29433729/pexels-photo-29433729.png?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940" },
+      { name: "Luchii Sculpt 3D", tag: "3D", desc: "Prompt-to-3D meshes you can spin, inspect and download as .glb.", caps: ["3D"], route: "/3d", img: "https://images.unsplash.com/photo-1634834300387-8015d9fb7550?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDR8MHwxfHNlYXJjaHwyfHxmdXR1cmlzdGljJTIwM0R8ZW58MHx8fHwxNzg2NDgxNjQ2fDA&ixlib=rb-4.1.0&q=85" },
       { name: "Luchii Vocalist Prime", tag: "Audio", desc: "Natural text-to-speech in a range of expressive voices.", caps: ["Audio"], route: "/tts", img: "https://images.unsplash.com/photo-1631727498498-5dd093268aea?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA4Mzl8MHwxfHNlYXJjaHwzfHxmdXR1cmlzdGljJTIwY3JlYXRpdmV8ZW58MHx8fHwxNzg2Mjc2ODUyfDA&ixlib=rb-4.1.0&q=85" },
     ],
   },

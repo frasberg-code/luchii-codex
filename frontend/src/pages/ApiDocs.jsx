@@ -30,10 +30,10 @@ export default function ApiDocs() {
       <Navbar />
       <main className="max-w-4xl mx-auto px-5 md:px-8 pt-28 pb-24" data-testid="api-docs-page">
         <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-neutral-300 mb-5">
-          <Terminal className="w-3.5 h-3.5 text-[#00F0FF]" /> Luchii AI Developer API
+          <Terminal className="w-3.5 h-3.5 text-[#00F0FF]" /> Luchii Developer API
         </div>
         <h1 className="font-display font-bold tracking-tight text-4xl md:text-5xl">
-          The <span className="text-[#00F0FF]">Luchii AI API</span>
+          The <span className="text-[#00F0FF]">Luchii API</span>
         </h1>
         <p className="mt-3 text-neutral-400 text-sm md:text-base max-w-2xl">
           One unified API for every modality, powered by the Frasberg and Luchii model families. Authenticate with a bearer token and call any endpoint below.
@@ -44,7 +44,7 @@ export default function ApiDocs() {
           <div className="mt-2">
             <span className="text-[#00F0FF]">curl</span> -X POST https://api.frasberg.com/v1/audio/tts \<br />
             &nbsp;&nbsp;-H <span className="text-emerald-400">"Authorization: Bearer $LUCHII_API_KEY"</span> \<br />
-            &nbsp;&nbsp;-d <span className="text-emerald-400">{'\'{"text":"Hello from Luchii AI","voice":"nova"}\''}</span>
+            &nbsp;&nbsp;-d <span className="text-emerald-400">{'\'{"text":"Hello from Luchii","voice":"nova"}\''}</span>
           </div>
         </div>
 
@@ -71,7 +71,7 @@ export default function ApiDocs() {
         </div>
 
         <p className="mt-10 text-xs text-neutral-600">
-          Luchii Models are separate Frasberg-owned AI models used internally by Luchii AI. Contact enterprise@frasberg.com for API keys, rate limits, and usage plans.
+          Luchii Models are separate Frasberg-owned AI models used internally by Luchii. Contact enterprise@frasberg.com for API keys, rate limits, and usage plans.
         </p>
       </main>
       <Footer />

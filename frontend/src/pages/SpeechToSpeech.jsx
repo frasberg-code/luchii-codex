@@ -1,20 +1,32 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
-import { Mic, Square, Upload, Loader2, Wand2, Download, RefreshCw, Trash2 } from "lucide-react";
+import { Mic, Square, Upload, Loader2, Wand2, Download, RefreshCw, Trash2, Fingerprint } from "lucide-react";
+import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import { toast } from "sonner";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const BACKEND = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND}/api`;
 const VOICES = ["nova", "alloy", "echo", "fable", "onyx", "shimmer", "sage", "coral", "ash"];
-const audioSrc = (t) => `data:${t.mime};base64,${t.audio_base64}`;
+const audioSrc = (t) => (t.audio_url ? `${BACKEND}${t.audio_url}` : `data:${t.mime};base64,${t.audio_base64}`);
+const voiceLabel = (v) => (v === "clone" ? "My cloned voice" : v);
 const ext = (mime) => (mime?.includes("wav") ? "wav" : "mp3");
 
-function VoicePicker({ voice, setVoice }) {
+function VoicePicker({ voice, setVoice, hasClone }) {
   return (
     <div className="flex flex-wrap gap-2">
+      {hasClone && (
+        <button data-testid="sts-voice-clone" onClick={() => setVoice("clone")}
+          className={`inline-flex items-center px-3.5 py-1.5 rounded-full text-sm border transition-colors ${voice === "clone"
+            ? "bg-[#00F0FF] text-black border-[#00F0FF] font-semibold"
+            : "border-[#00F0FF]/40 bg-[#00F0FF]/10 text-[#00F0FF] hover:bg-[#00F0FF]/20"}`}>
+          <Fingerprint className="w-3.5 h-3.5 mr-1.5" /> My cloned voice
+        </button>
+      )}
       {VOICES.map((v) => (
         <button key={v} data-testid={`sts-voice-${v}`} onClick={() => setVoice(v)}
           className={`px-3.5 py-1.5 rounded-full text-sm border capitalize transition-colors ${voice === v
@@ -29,7 +41,7 @@ function Take({ take, index, onRemove }) {
   return (
     <div data-testid={`sts-take-${index}`} className="rounded-xl border border-white/10 bg-black/30 p-4 space-y-2">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs uppercase tracking-wider text-[#00F0FF] capitalize">{take.voice}</span>
+        <span className="text-xs uppercase tracking-wider text-[#00F0FF]">{voiceLabel(take.voice)}{take.id && <span className="ml-2 text-neutral-500 normal-case tracking-normal">· saved</span>}</span>
         <div className="flex items-center gap-1">
           <a data-testid={`sts-take-download-${index}`} href={audioSrc(take)} download={`luchii-sts-${take.voice}.${ext(take.mime)}`}
             className="p-2 rounded-full hover:bg-white/10 text-neutral-300" aria-label="Download take">
@@ -48,6 +60,8 @@ function Take({ take, index, onRemove }) {
 }
 
 export default function SpeechToSpeech() {
+  const { user, authHeader } = useAuth();
+  const [hasClone, setHasClone] = useState(false);
   const [blob, setBlob] = useState(null);
   const [voice, setVoice] = useState("nova");
   const [recording, setRecording] = useState(false);
@@ -58,7 +72,35 @@ export default function SpeechToSpeech() {
   const rec = useRef(null);
   const sourceUrl = useMemo(() => (blob ? URL.createObjectURL(blob) : null), [blob]);
 
-  const addTake = (t) => setTakes((prev) => [{ ...t, key: Date.now() }, ...prev].slice(0, 10));
+  useEffect(() => {
+    if (!user) { setHasClone(false); setTakes((p) => p.filter((t) => !t.id)); return; }
+    axios.get(`${API}/voice/clone`, { headers: authHeader }).then(({ data }) => setHasClone(!!data.has_sample)).catch(() => {});
+    axios.get(`${API}/voice/takes`, { headers: authHeader })
+      .then(({ data }) => setTakes(data.map((t) => ({ ...t, key: t.id }))))
+      .catch(() => {});
+  }, [user]); // eslint-disable-line
+
+  const addTake = async (t) => {
+    let take = { ...t, key: `${Date.now()}-${Math.random()}` };
+    if (user) {
+      try {
+        const { data } = await axios.post(`${API}/voice/takes`,
+          { text: t.text, voice: t.voice, mime: t.mime, audio_base64: t.audio_base64 }, { headers: authHeader });
+        take = { ...data, key: data.id };
+      } catch {
+        toast.error("Couldn't save this take to your gallery.");
+      }
+    }
+    setTakes((prev) => [take, ...prev].slice(0, 50));
+  };
+
+  const removeTake = async (t) => {
+    if (t.id) {
+      try { await axios.delete(`${API}/voice/takes/${t.id}`, { headers: authHeader }); }
+      catch { toast.error("Couldn't delete this take."); return; }
+    }
+    setTakes((p) => p.filter((x) => x.key !== t.key));
+  };
 
   const toggleRecord = async () => {
     if (recording) { rec.current?.stop(); return; }
@@ -87,7 +129,7 @@ export default function SpeechToSpeech() {
       const fd = new FormData();
       fd.append("file", blob, blob.name || "voice.webm");
       fd.append("voice", voice);
-      const { data } = await axios.post(`${API}/sts`, fd);
+      const { data } = await axios.post(`${API}/sts`, fd, { headers: authHeader });
       setTranscript(data.text);
       addTake({ ...data, voice });
     } catch (e) {
@@ -101,7 +143,9 @@ export default function SpeechToSpeech() {
     if (!transcript.trim()) { toast.error("The transcript is empty."); return; }
     setRespeaking(true);
     try {
-      const { data } = await axios.post(`${API}/tts`, { text: transcript.trim(), voice });
+      const { data } = voice === "clone"
+        ? await axios.post(`${API}/voice/clone/speak`, { text: transcript.trim() }, { headers: authHeader })
+        : await axios.post(`${API}/tts`, { text: transcript.trim(), voice });
       addTake({ ...data, text: transcript.trim(), voice });
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Could not re-speak. Please try again.");
@@ -140,7 +184,12 @@ export default function SpeechToSpeech() {
           {sourceUrl && <audio data-testid="sts-source-audio" controls src={sourceUrl} className="w-full" />}
           <div>
             <label className="text-sm font-medium text-neutral-300 mb-2 block">Target voice</label>
-            <VoicePicker voice={voice} setVoice={setVoice} />
+            <VoicePicker voice={voice} setVoice={setVoice} hasClone={hasClone} />
+            {user && !hasClone && (
+              <p className="mt-2 text-xs text-neutral-500" data-testid="sts-clone-hint">
+                Want it in your own voice? <Link to="/voice-clone" className="text-[#00F0FF] hover:underline">Save a voice sample</Link> first.
+              </p>
+            )}
           </div>
           <Button data-testid="sts-convert-btn" onClick={convert} disabled={busy}
             className="w-full h-12 bg-[#00F0FF] text-black hover:bg-[#00d4de] font-semibold rounded-full text-base">
@@ -155,7 +204,7 @@ export default function SpeechToSpeech() {
               <Button data-testid="sts-respeak-btn" onClick={respeak} disabled={respeaking} variant="outline"
                 className="rounded-full border-[#00F0FF]/40 bg-[#00F0FF]/10 text-[#00F0FF] hover:bg-[#00F0FF]/20">
                 {respeaking ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                Re-speak as <span className="capitalize ml-1">{voice}</span>
+                Re-speak as <span className="capitalize ml-1">{voiceLabel(voice)}</span>
               </Button>
             </div>
           )}
@@ -163,9 +212,14 @@ export default function SpeechToSpeech() {
 
         {takes.length > 0 && (
           <section className="mt-8 space-y-3" data-testid="sts-takes">
-            <h2 className="text-base md:text-lg font-semibold">Your takes</h2>
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-base md:text-lg font-semibold">Your takes</h2>
+              <span className="text-xs text-neutral-500" data-testid="sts-takes-note">
+                {user ? "Saved to your gallery" : "Log in to keep takes after a refresh"}
+              </span>
+            </div>
             {takes.map((t, i) => (
-              <Take key={t.key} take={t} index={i} onRemove={() => setTakes((p) => p.filter((x) => x.key !== t.key))} />
+              <Take key={t.key} take={t} index={i} onRemove={() => removeTake(t)} />
             ))}
           </section>
         )}

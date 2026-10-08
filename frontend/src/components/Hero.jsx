@@ -14,8 +14,11 @@ export default function Hero() {
 
       <div className="relative max-w-[1400px] mx-auto px-5 md:px-8 text-center">
         <h1 className="font-display font-bold tracking-tight text-5xl md:text-8xl" data-testid="hero-heading">
-          Luchii <span className="text-[#00F0FF]">AI</span>
+          Luchii
         </h1>
+        <p data-testid="hero-powered-by" className="mt-4 text-xs md:text-sm uppercase tracking-[0.3em] text-[#00F0FF]/80">
+          Every tool and model powered by Frasberg
+        </p>
 
         <div className="mt-8 flex items-center justify-center">
           <Button

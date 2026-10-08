@@ -95,3 +95,5 @@ backend/models/whisper/models--Systran--faster-whisper-base/blobs/d01c3014881c9c
 credentials.json
 *.key
 .credentials
+backend/models/openvoice/converter/checkpoint.pth
+frontend/node_modules/.cache/default-development/0.pack

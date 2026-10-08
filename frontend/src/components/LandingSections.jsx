@@ -82,7 +82,7 @@ export default function LandingSections() {
               Featured
             </span>
             <h2 className="font-display font-bold tracking-tight text-3xl md:text-5xl mt-3">
-              Made with Luchii AI
+              Made with Luchii
             </h2>
             <p className="mt-4 text-neutral-400 text-lg">
               A glimpse of what creators are making. Every frame generated on the platform.

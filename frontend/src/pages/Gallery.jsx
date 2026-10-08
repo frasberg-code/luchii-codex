@@ -1,27 +1,90 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { Sparkles, ArrowLeft, Download, ImageIcon, Loader2, Wand2, Share2 } from "lucide-react";
+import { Sparkles, ArrowLeft, Download, ImageIcon, Loader2, Wand2, Share2, AudioLines, Box } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { useAuth } from "../context/AuthContext";
 import { brand } from "../mock";
 import { toast } from "sonner";
+import "@google/model-viewer";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const BACKEND = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND}/api`;
+const TABS = [
+  { id: "images", label: "Images", icon: ImageIcon },
+  { id: "takes", label: "Voice takes", icon: AudioLines },
+  { id: "models", label: "3D models", icon: Box },
+];
+
+function Empty({ text, to, cta }) {
+  const navigate = useNavigate();
+  return (
+    <div className="grid place-items-center py-24 text-center" data-testid="gallery-empty">
+      <p className="text-neutral-400">{text}</p>
+      <Button onClick={() => navigate(to)} className="mt-4 bg-[#00F0FF] text-black hover:bg-[#00d4de] font-semibold rounded-full">{cta}</Button>
+    </div>
+  );
+}
+
+function TakesList({ takes }) {
+  if (!takes.length) return <Empty text="No saved voice takes yet." to="/sts" cta="Open Speech to Speech" />;
+  return (
+    <div className="grid md:grid-cols-2 gap-4" data-testid="gallery-takes">
+      {takes.map((t) => (
+        <div key={t.id} data-testid={`gallery-take-${t.id}`} className="rounded-xl border border-white/10 bg-[#1E2327] p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase tracking-wider text-[#00F0FF]">{t.voice === "clone" ? "My cloned voice" : t.voice}</span>
+            <a href={`${BACKEND}${t.audio_url}`} download className="text-white/70 hover:text-white" title="Download"><Download className="w-4 h-4" /></a>
+          </div>
+          <p className="text-sm text-neutral-300 line-clamp-2">“{t.text}”</p>
+          <audio controls preload="none" src={`${BACKEND}${t.audio_url}`} className="w-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ModelsList({ models }) {
+  const done = models.filter((m) => m.status === "completed");
+  if (!done.length) return <Empty text="No 3D models yet." to="/3d" cta="Open 3D Studio" />;
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" data-testid="gallery-models">
+      {done.map((m) => (
+        <div key={m.id} data-testid={`gallery-model-${m.id}`} className="rounded-xl border border-white/10 bg-[#1E2327] overflow-hidden">
+          <model-viewer src={`${BACKEND}${m.model_url}`} alt={m.prompt} camera-controls auto-rotate
+            style={{ width: "100%", height: "220px", background: "#11161A" }} />
+          <div className="p-3 flex items-center justify-between gap-2">
+            <p className="text-xs text-neutral-300 line-clamp-1">{m.prompt}</p>
+            <a href={`${BACKEND}${m.model_url}`} download className="text-white/70 hover:text-white" title="Download .glb"><Download className="w-4 h-4" /></a>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function Gallery() {
   const { user, loading, authHeader } = useAuth();
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [busy, setBusy] = useState(true);
+  const [tab, setTab] = useState("images");
+  const [takes, setTakes] = useState([]);
+  const [models, setModels] = useState([]);
 
   useEffect(() => {
     if (loading) return;
     if (!user) { navigate("/"); return; }
     const load = async () => {
       try {
-        const res = await axios.get(`${API}/my/generations`, { headers: authHeader, params: { limit: 60 } });
+        const [res, tk, md] = await Promise.all([
+          axios.get(`${API}/my/generations`, { headers: authHeader, params: { limit: 60 } }),
+          axios.get(`${API}/voice/takes`, { headers: authHeader }).catch(() => ({ data: [] })),
+          axios.get(`${API}/3d`, { headers: authHeader, params: { limit: 60 } }).catch(() => ({ data: [] })),
+        ]);
         setItems(res.data);
+        setTakes(tk.data);
+        setModels(md.data);
       } catch (e) {
         // ignore
       } finally {
@@ -36,8 +99,8 @@ export default function Gallery() {
       <header className="sticky top-0 z-40 bg-[#12171B]/85 backdrop-blur-xl border-b border-white/5">
         <div className="max-w-[1400px] mx-auto px-5 md:px-8 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
-            <img src={brand.logo} alt="Luchii AI logo" className="w-9 h-9 rounded-full object-contain" />
-            <span className="font-display text-lg font-bold">Luchii <span className="text-[#00F0FF]">AI</span></span>
+            <img src={brand.logo} alt="Luchii logo" className="w-9 h-9 rounded-full object-contain" />
+            <span className="font-display text-lg font-bold">Luchii</span>
           </Link>
           <Link to="/create" className="inline-flex items-center gap-1.5 text-sm text-neutral-400 hover:text-white">
             <ArrowLeft className="w-4 h-4" /> Back to create
@@ -49,7 +112,7 @@ export default function Gallery() {
         <div className="flex items-end justify-between mb-8">
           <div>
             <h1 className="font-display text-3xl font-bold">My gallery</h1>
-            <p className="text-sm text-neutral-500 mt-1">Everything you've created with Luchii AI.</p>
+            <p className="text-sm text-neutral-500 mt-1">Everything you've created with Luchii.</p>
           </div>
           <Button onClick={() => navigate("/create")}
             className="bg-[#00F0FF] text-black hover:bg-[#00d4de] font-semibold rounded-full">
@@ -57,7 +120,17 @@ export default function Gallery() {
           </Button>
         </div>
 
-        {busy ? (
+        <div className="flex gap-2 mb-6" data-testid="gallery-tabs">
+          {TABS.map((t) => (
+            <button key={t.id} data-testid={`gallery-tab-${t.id}`} onClick={() => setTab(t.id)}
+              className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm border transition-colors ${tab === t.id
+                ? "bg-[#00F0FF] text-black border-[#00F0FF] font-semibold" : "border-white/10 bg-white/5 text-neutral-300 hover:bg-white/10"}`}>
+              <t.icon className="w-4 h-4" /> {t.label}
+            </button>
+          ))}
+        </div>
+
+        {!busy && tab === "takes" ? <TakesList takes={takes} /> : !busy && tab === "models" ? <ModelsList models={models} /> : busy ? (
           <div className="grid place-items-center py-32 text-neutral-500">
             <Loader2 className="w-8 h-8 animate-spin text-[#00F0FF]" />
           </div>

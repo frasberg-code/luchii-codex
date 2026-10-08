@@ -61,9 +61,9 @@ export default function Navbar() {
       <div className="max-w-[1400px] mx-auto px-5 md:px-8">
         <div className="flex items-center justify-between h-16">
           <Link to="/" className="flex items-center gap-2 group">
-            <img src={brand.logo} alt="Luchii AI logo" className="w-9 h-9 rounded-full object-contain" />
+            <img src={brand.logo} alt="Luchii logo" className="w-9 h-9 rounded-full object-contain" />
             <span className="font-display text-lg font-bold tracking-tight">
-              Luchii <span className="text-[#00F0FF]">AI</span>
+              Luchii
             </span>
           </Link>
 

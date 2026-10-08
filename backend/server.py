@@ -16,6 +16,7 @@ import bcrypt
 import httpx
 import jwt
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, UploadFile, File, Form
+import base64
 from fastapi.responses import Response
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from pydantic import BaseModel, EmailStr, Field
@@ -26,6 +27,8 @@ import local_engines
 client = AsyncIOMotorClient(os.environ["MONGO_URL"])
 db = client[os.environ["DB_NAME"]]
 fs = AsyncIOMotorGridFSBucket(db, bucket_name="voice_samples")
+takes_fs = AsyncIOMotorGridFSBucket(db, bucket_name="voice_takes")
+models_fs = AsyncIOMotorGridFSBucket(db, bucket_name="models3d")
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALG = "HS256"
@@ -367,10 +370,13 @@ async def speak(text: str, voice: Optional[str] = None) -> dict:
 
 
 @api.post("/sts")
-async def speech_to_speech(file: UploadFile = File(...), voice: str = Form("nova")):
+async def speech_to_speech(file: UploadFile = File(...), voice: str = Form("nova"),
+                           user: Optional[dict] = Depends(optional_user)):
     audio = await file.read()
     if not audio:
         raise HTTPException(status_code=400, detail="Empty audio file")
+    if voice == "clone" and not (user and user.get("voice_clone")):
+        raise HTTPException(status_code=400, detail="Log in and save a voice sample on the Voice Cloning page first")
     try:
         d = await frasberg_upload("/voice/transcribe", file.filename or "voice.webm", audio,
                                   file.content_type or "audio/webm", "stt")
@@ -385,7 +391,8 @@ async def speech_to_speech(file: UploadFile = File(...), voice: str = Form("nova
                                 detail=f"Could not transcribe audio: {le.__class__.__name__}")
     if not text:
         raise HTTPException(status_code=400, detail="No speech detected in the recording")
-    return {"text": text, "voice": voice, **(await speak_with_fallback(text, voice))}
+    speech = await speak_in_clone(text, user["voice_clone"]) if voice == "clone" else await speak_with_fallback(text, voice)
+    return {"text": text, "voice": voice, **speech}
 
 
 # ---------- voice cloning ----------
@@ -409,8 +416,15 @@ async def voice_clone(file: UploadFile = File(...), user: dict = Depends(current
     if len(data) > 8 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 8 MB)")
     name, ctype = file.filename or "sample.webm", file.content_type or "audio/webm"
-    async with clone_lock:
-        d = await frasberg_upload("/voice/clone", name, data, ctype, "clone")
+    try:
+        async with clone_lock:
+            d = await frasberg_upload("/voice/clone", name, data, ctype, "clone")
+    except HTTPException as e:
+        logger.warning("Frasberg clone upload failed (%s); keeping sample for in-house cloning", e.detail)
+        try:
+            d = {"duration_sec": await asyncio.to_thread(local_engines.audio_duration, data), "cloning_status": "ready"}
+        except Exception:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail="Could not read that audio file")
     file_id = await fs.upload_from_stream(f"voice-samples/{user['id']}/{uuid.uuid4()}", data,
                                           metadata={"user_id": user["id"], "content_type": ctype})
     clone = {"file_id": file_id, "filename": name, "content_type": ctype,
@@ -441,10 +455,22 @@ async def voice_clone_speak(body: CloneSpeakIn, user: dict = Depends(current_use
     c = user.get("voice_clone")
     if not c:
         raise HTTPException(status_code=400, detail="Record your voice sample first")
-    sample = await read_sample(c)
-    async with clone_lock:
-        await frasberg_upload("/voice/clone", c["filename"], sample, c["content_type"], "clone")
-        return {"text": body.text, **(await speak(body.text))}
+    return {"text": body.text, **(await speak_in_clone(body.text, c))}
+
+
+async def speak_in_clone(text: str, clone: dict) -> dict:
+    sample = await read_sample(clone)
+    try:
+        async with clone_lock:
+            await frasberg_upload("/voice/clone", clone["filename"], sample, clone["content_type"], "clone")
+            return {**(await speak(text)), "engine": "frasberg"}
+    except HTTPException as e:
+        logger.warning("Frasberg cloned speech failed (%s); using in-house voice converter", e.detail)
+    try:
+        return {**(await asyncio.to_thread(local_engines.speak_cloned, text, sample)), "engine": "luchii-local"}
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Local voice conversion failed")
+        raise HTTPException(status_code=424, detail=f"Voice clone engine error: {e.__class__.__name__}")
 
 
 # ---------- video & music jobs ----------
@@ -496,6 +522,124 @@ async def music_audio(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
     r, _ = await frasberg("GET", f"/generate/music/task/{job_id}/audio", key_index=job["key_index"])
     return Response(content=r.content, media_type=r.headers.get("content-type", "audio/wav"))
+
+
+# ---------- saved voice takes ----------
+class TakeIn(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    voice: str
+    mime: str = "audio/wav"
+    audio_base64: str = Field(min_length=1)
+
+
+def take_out(t: dict) -> dict:
+    return {"id": t["id"], "text": t["text"], "voice": t["voice"], "mime": t["mime"],
+            "audio_url": f"/api/voice/takes/{t['id']}/audio", "created_at": t["created_at"]}
+
+
+@api.post("/voice/takes")
+async def save_take(body: TakeIn, user: dict = Depends(current_user)):
+    data = base64.b64decode(strip_data_url(body.audio_base64))
+    if len(data) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Take too large")
+    take = {"id": str(uuid.uuid4()), "user_id": user["id"], "text": body.text, "voice": body.voice,
+            "mime": body.mime, "created_at": now_iso()}
+    take["file_id"] = await takes_fs.upload_from_stream(f"takes/{user['id']}/{take['id']}", data,
+                                                        metadata={"user_id": user["id"]})
+    await db.voice_takes.insert_one(take.copy())
+    return take_out(take)
+
+
+@api.get("/voice/takes")
+async def list_takes(limit: int = 50, user: dict = Depends(current_user)):
+    cur = db.voice_takes.find({"user_id": user["id"]}, {"_id": 0})
+    return [take_out(t) for t in await cur.sort("created_at", -1).limit(min(limit, 200)).to_list(None)]
+
+
+@api.get("/voice/takes/{take_id}/audio")
+async def take_audio(take_id: str):
+    t = await db.voice_takes.find_one({"id": take_id}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Take not found")
+    stream = await takes_fs.open_download_stream(t["file_id"])
+    return Response(content=await stream.read(), media_type=t["mime"])
+
+
+@api.delete("/voice/takes/{take_id}")
+async def delete_take(take_id: str, user: dict = Depends(current_user)):
+    t = await db.voice_takes.find_one({"id": take_id, "user_id": user["id"]}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Take not found")
+    await takes_fs.delete(t["file_id"])
+    await db.voice_takes.delete_one({"id": take_id})
+    return {"deleted": True}
+
+
+# ---------- 3D studio ----------
+shape_queue = asyncio.Lock()
+
+
+class ModelIn(BaseModel):
+    prompt: str = Field(min_length=1, max_length=300)
+    session_id: Optional[str] = None
+
+
+async def model_out(m: dict) -> dict:
+    out = {k: m.get(k) for k in ("id", "prompt", "status", "error", "created_at", "finished_at")}
+    out["model_url"] = f"/api/3d/{m['id']}/model.glb" if m["status"] == "completed" else None
+    if m["status"] == "queued":
+        out["queue_position"] = await db.models3d.count_documents(
+            {"status": {"$in": ["queued", "running"]}, "created_at": {"$lt": m["created_at"]}}) + 1
+    return out
+
+
+async def run_3d(model_id: str, prompt: str):
+    async with shape_queue:
+        await db.models3d.update_one({"id": model_id}, {"$set": {"status": "running", "started_at": now_iso()}})
+        try:
+            glb = await asyncio.to_thread(local_engines.generate_3d, prompt)
+            file_id = await models_fs.upload_from_stream(f"models3d/{model_id}.glb", glb)
+            update = {"status": "completed", "file_id": file_id}
+        except Exception as e:  # noqa: BLE001
+            logger.exception("3D generation failed")
+            update = {"status": "failed", "error": f"3D engine error: {e.__class__.__name__}"}
+        await db.models3d.update_one({"id": model_id}, {"$set": {**update, "finished_at": now_iso()}})
+
+
+@api.post("/3d")
+async def create_3d(body: ModelIn, user: Optional[dict] = Depends(optional_user)):
+    m = {"id": str(uuid.uuid4()), "prompt": body.prompt.strip(), "status": "queued", "error": None,
+         "session_id": body.session_id, "user_id": user["id"] if user else None, "created_at": now_iso()}
+    await db.models3d.insert_one(m.copy())
+    asyncio.create_task(run_3d(m["id"], m["prompt"]))
+    return await model_out(m)
+
+
+@api.get("/3d")
+async def list_3d(session_id: Optional[str] = None, limit: int = 12, user: Optional[dict] = Depends(optional_user)):
+    if not user and not session_id:
+        return []
+    q = {"user_id": user["id"]} if user else {"session_id": session_id}
+    cur = db.models3d.find(q, {"_id": 0})
+    return [await model_out(m) for m in await cur.sort("created_at", -1).limit(min(limit, 60)).to_list(None)]
+
+
+@api.get("/3d/{model_id}")
+async def get_3d(model_id: str):
+    m = await db.models3d.find_one({"id": model_id}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Model not found")
+    return await model_out(m)
+
+
+@api.get("/3d/{model_id}/model.glb")
+async def get_3d_file(model_id: str):
+    m = await db.models3d.find_one({"id": model_id, "status": "completed"}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Model not ready")
+    stream = await models_fs.open_download_stream(m["file_id"])
+    return Response(content=await stream.read(), media_type="model/gltf-binary",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 # ---------- engine status ----------
@@ -558,16 +702,32 @@ async def probe_chat():
 
 async def probe_local_voice():
     await asyncio.to_thread(local_engines.synthesize, "Status check", "nova")
-    return "online", "Piper voices running on Luchii server"
+    return "online", "Piper voices running on Frasberg edge"
 
 
 async def probe_local_image():
     st = local_engines.status()
     if st["image_loaded"]:
-        return "online", "SD-Turbo loaded on Luchii server (CPU)"
+        return "online", "SD-Turbo loaded on Frasberg edge (CPU)"
     if st["image_downloaded"]:
         return "online", "SD-Turbo ready, loads on first image"
     return "degraded", "SD-Turbo downloads on first image (~2.5 GB)"
+
+
+async def probe_local_3d():
+    st = local_engines.status()
+    if local_engines.busy_3d():
+        return "online", "Building a 3D model now"
+    if st["shape_loaded"]:
+        return "online", "Shap-E loaded on Frasberg edge (CPU)"
+    if st["shape_downloaded"]:
+        return "online", "Shap-E ready, loads on first model"
+    return "degraded", "Shap-E downloads on first model (~4 GB)"
+
+
+async def probe_local_clone():
+    st = local_engines.status()
+    return ("online", "OpenVoice converter loaded") if st["converter_loaded"] else ("degraded", "OpenVoice loads on first use")
 
 
 ENGINES = [
@@ -579,8 +739,10 @@ ENGINES = [
     ("music", "Music Engine", "Audio Studio",
      lambda: probe_job("/generate/music", {"prompt": "status check", "duration": 15, "model": "frasberg-music"}, "music")),
     ("chat", "Luchii Chat (luchii-6-plus)", "Language model", probe_chat),
-    ("local_voice", "Luchii In-house Voice", "Text to Speech & Speech to Speech fallback", probe_local_voice),
-    ("local_image", "Luchii In-house Image", "Generate, edit, upscale fallback", probe_local_image),
+    ("local_voice", "Frasberg Edge Voice", "Text to Speech & Speech to Speech fallback", probe_local_voice),
+    ("local_image", "Frasberg Edge Image", "Generate, edit, upscale fallback", probe_local_image),
+    ("local_3d", "Frasberg Edge 3D", "3D Studio", probe_local_3d),
+    ("local_clone", "Frasberg Edge Voice Clone", "Cloned voice in Voice Cloning & Speech to Speech", probe_local_clone),
 ]
 
 
@@ -625,6 +787,10 @@ async def startup():
     await db.generations.create_index([("user_id", 1), ("created_at", -1)])
     await db.jobs.create_index("id")
     await db.login_attempts.create_index("identifier")
+    await db.voice_takes.create_index([("user_id", 1), ("created_at", -1)])
+    await db.models3d.create_index("id")
+    await db.models3d.update_many({"status": {"$in": ["queued", "running"]}},
+                                  {"$set": {"status": "failed", "error": "Interrupted by a server restart. Please try again."}})
     asyncio.get_running_loop().run_in_executor(None, local_engines.warm_up)
 
 

@@ -39,8 +39,8 @@ export default function Share() {
       <header className="sticky top-0 z-40 bg-[#12171B]/85 backdrop-blur-xl border-b border-white/5">
         <div className="max-w-[1100px] mx-auto px-5 md:px-8 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
-            <img src={brand.logo} alt="Luchii AI logo" className="w-9 h-9 rounded-full object-contain" />
-            <span className="font-display text-lg font-bold">Luchii <span className="text-[#00F0FF]">AI</span></span>
+            <img src={brand.logo} alt="Luchii logo" className="w-9 h-9 rounded-full object-contain" />
+            <span className="font-display text-lg font-bold">Luchii</span>
           </Link>
           <Button onClick={() => navigate("/create")}
             className="bg-[#00F0FF] text-black hover:bg-[#00d4de] font-semibold rounded-full group">
@@ -92,7 +92,7 @@ export default function Share() {
               </div>
               <div className="mt-10 rounded-2xl border border-white/10 bg-[#1E2327] p-5">
                 <p className="text-sm text-neutral-300">
-                  Made with <span className="font-semibold text-white">Luchii AI</span> — the creative
+                  Made with <span className="font-semibold text-white">Luchii</span> — the creative
                   platform to direct your best work.
                 </p>
                 <Button onClick={() => navigate("/create")}

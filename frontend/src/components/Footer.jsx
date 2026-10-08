@@ -10,13 +10,16 @@ export default function Footer() {
         <div className="grid md:grid-cols-5 gap-10">
           <div className="md:col-span-1">
             <Link to="/" className="flex items-center gap-2">
-              <img src={brand.logo} alt="Luchii AI logo" className="w-9 h-9 rounded-full object-contain" />
+              <img src={brand.logo} alt="Luchii logo" className="w-9 h-9 rounded-full object-contain" />
               <span className="font-display text-lg font-bold">
-                Luchii <span className="text-[#00F0FF]">AI</span>
+                Luchii
               </span>
             </Link>
             <p className="mt-4 text-sm text-neutral-500 max-w-xs">
               The creative platform to direct your best work.
+            </p>
+            <p data-testid="footer-powered-by" className="mt-3 text-xs uppercase tracking-[0.2em] text-[#00F0FF]/80">
+              Powered by Frasberg
             </p>
           </div>
           {footerCols.map((col) => (
@@ -36,7 +39,7 @@ export default function Footer() {
         </div>
         <div className="mt-14 pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-sm text-neutral-600">
-            © {new Date().getFullYear()} Luchii AI. All rights reserved.
+            © {new Date().getFullYear()} Luchii. All rights reserved.
           </p>
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-neutral-600">
             <Link to="/legal/privacy" data-testid="footer-privacy-link" className="hover:text-white transition-colors">Privacy</Link>
