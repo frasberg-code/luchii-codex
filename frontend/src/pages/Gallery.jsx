@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { Sparkles, ArrowLeft, Download, ImageIcon, Loader2, Wand2, Share2, AudioLines, Box } from "lucide-react";
+import { Sparkles, ArrowLeft, Download, ImageIcon, Loader2, Wand2, Share2, AudioLines, Box, Search } from "lucide-react";
+import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { useAuth } from "../context/AuthContext";
 import { brand } from "../mock";
@@ -27,10 +28,32 @@ function Empty({ text, to, cta }) {
 }
 
 function TakesList({ takes }) {
+  const [q, setQ] = useState("");
+  const [voice, setVoice] = useState("all");
+  const voices = useMemo(() => ["all", ...new Set(takes.map((t) => t.voice))], [takes]);
+  const shown = takes.filter((t) => (voice === "all" || t.voice === voice) && t.text.toLowerCase().includes(q.trim().toLowerCase()));
   if (!takes.length) return <Empty text="No saved voice takes yet." to="/sts" cta="Open Speech to Speech" />;
   return (
+    <div className="space-y-5">
+      <div className="flex flex-col md:flex-row gap-3 md:items-center" data-testid="takes-filters">
+        <div className="relative md:w-80">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+          <Input data-testid="takes-search-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search what was said…"
+            className="pl-9 bg-black/40 border-white/10 focus-visible:ring-[#00F0FF]" />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {voices.map((v) => (
+            <button key={v} data-testid={`takes-voice-${v}`} onClick={() => setVoice(v)}
+              className={`rounded-full px-3 py-1 text-xs border capitalize transition-colors ${voice === v ? "bg-[#00F0FF] text-black border-[#00F0FF] font-semibold" : "border-white/10 bg-white/5 text-neutral-300 hover:bg-white/10"}`}>
+              {v === "clone" ? "My cloned voice" : v === "all" ? "All voices" : v}
+            </button>
+          ))}
+        </div>
+        <span className="md:ml-auto text-xs text-neutral-500" data-testid="takes-count">{shown.length} of {takes.length}</span>
+      </div>
+      {!shown.length && <p className="text-sm text-neutral-500 py-10 text-center" data-testid="takes-no-match">No takes match your search.</p>}
     <div className="grid md:grid-cols-2 gap-4" data-testid="gallery-takes">
-      {takes.map((t) => (
+      {shown.map((t) => (
         <div key={t.id} data-testid={`gallery-take-${t.id}`} className="rounded-xl border border-white/10 bg-[#1E2327] p-4 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs uppercase tracking-wider text-[#00F0FF]">{t.voice === "clone" ? "My cloned voice" : t.voice}</span>
@@ -40,6 +63,7 @@ function TakesList({ takes }) {
           <audio controls preload="none" src={`${BACKEND}${t.audio_url}`} className="w-full" />
         </div>
       ))}
+    </div>
     </div>
   );
 }

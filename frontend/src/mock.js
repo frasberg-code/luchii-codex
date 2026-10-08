@@ -84,7 +84,7 @@ export const tools = [
   { title: "Voice Cloning", desc: "Clone your voice and speak any text with it", route: "/voice-clone" },
   { title: "Audio Studio", desc: "Generate music, sound effects, and audio beds", route: "/audio" },
   { title: "3D Studio", desc: "Generate 3D objects and assets from a prompt", route: "/3d" },
-  { title: "Spaces Builder", desc: "Build interactive 3D worlds and scenes", mode: "text", preset: "Immersive explorable 3D world scene, wide establishing shot, of " },
+  { title: "Spaces Builder", desc: "Build interactive 3D worlds and scenes", route: "/spaces" },
   { title: "Change Camera Angle", desc: "Reframe any shot from a new angle", mode: "image", preset: "Reframe this shot from a new camera angle while keeping the same subject and scene" },
   { title: "All tools", desc: "Explore the full Luchii toolset", mode: "text" },
 ];

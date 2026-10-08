@@ -123,6 +123,10 @@ def warm_up():
         with _image_lock:
             _pipes()
         logger.info("Luchii in-house engines loaded")
+        from huggingface_hub import snapshot_download
+        for repo in (SHAPE_MODEL, SHAPE_IMG_MODEL, MUSIC_MODEL):
+            snapshot_download(repo, cache_dir=str(SCRATCH_MODELS_DIR / "hf"))
+        logger.info("Scratch models (3D, music) cached")
     except Exception:  # noqa: BLE001
         logger.exception("Luchii in-house engine warm-up failed")
 
@@ -140,6 +144,13 @@ def _load_image(b64: str, longest: int):
     scale = longest / max(img.size)
     w, h = (max(64, int(d * scale) // 64 * 64) for d in img.size)
     return img.resize((w, h), Image.LANCZOS)
+
+
+def thumbnail(b64: str) -> str:
+    img = _load_image(b64, 256)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=80)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
 def generate_image(prompt: str, aspect: Optional[str] = "1:1") -> str:
@@ -176,28 +187,43 @@ def status() -> dict:
 
 
 # ---------- 3D ----------
-def _shape_pipe():
-    global _shape
+_shape_i2m = None
+SHAPE_IMG_MODEL = "openai/shap-e-img2img"
+
+
+def _fast_scheduler(pipe):
+    from diffusers import DPMSolverMultistepScheduler
+    pipe.scheduler = DPMSolverMultistepScheduler(
+        num_train_timesteps=1024, trained_betas=pipe.scheduler.betas.numpy(), prediction_type="sample",
+        algorithm_type="dpmsolver++", use_karras_sigmas=True)
+    pipe.set_progress_bar_config(disable=True)
+    return pipe
+
+
+def _shape_pipe(from_image: bool = False):
+    global _shape, _shape_i2m
+    import torch
+    torch.set_num_threads(cpu_threads())
+    cache = str(SCRATCH_MODELS_DIR / "hf")
+    if from_image:
+        if _shape_i2m is None:
+            from diffusers import ShapEImg2ImgPipeline
+            _shape_i2m = _fast_scheduler(ShapEImg2ImgPipeline.from_pretrained(SHAPE_IMG_MODEL, torch_dtype=torch.float32, cache_dir=cache))
+        return _shape_i2m
     if _shape is None:
-        import torch
-        from diffusers import ShapEPipeline, DPMSolverMultistepScheduler
-        torch.set_num_threads(cpu_threads())
-        pipe = ShapEPipeline.from_pretrained(SHAPE_MODEL, torch_dtype=torch.float32,
-                                             cache_dir=str(SCRATCH_MODELS_DIR / "hf"))
-        pipe.scheduler = DPMSolverMultistepScheduler(
-            num_train_timesteps=1024, trained_betas=pipe.scheduler.betas.numpy(), prediction_type="sample",
-            algorithm_type="dpmsolver++", use_karras_sigmas=True)
-        pipe.set_progress_bar_config(disable=True)
-        _shape = pipe
+        from diffusers import ShapEPipeline
+        _shape = _fast_scheduler(ShapEPipeline.from_pretrained(SHAPE_MODEL, torch_dtype=torch.float32, cache_dir=cache))
     return _shape
 
 
-def generate_3d(prompt: str) -> bytes:
+def generate_3d(prompt: str, image_b64: Optional[str] = None) -> bytes:
     import numpy as np
     import trimesh
     with _shape_lock:
-        pipe = _shape_pipe()
-        latents = pipe(prompt, guidance_scale=15.0, num_inference_steps=SHAPE_STEPS, output_type="latent").images
+        pipe = _shape_pipe(from_image=bool(image_b64))
+        source = _load_image(image_b64, 256) if image_b64 else prompt
+        guidance = 3.0 if image_b64 else 15.0
+        latents = pipe(source, guidance_scale=guidance, num_inference_steps=SHAPE_STEPS, output_type="latent").images
         mesh = pipe.shap_e_renderer.decode_to_mesh(latents[0, None], "cpu")
     verts = mesh.verts.cpu().numpy()[:, [0, 2, 1]] * [1, 1, -1]
     colors = np.stack([mesh.vertex_channels[k].cpu().numpy() for k in "RGB"], 1)
@@ -262,3 +288,90 @@ def speak_cloned(text: str, reference: bytes, base_voice: str = "nova") -> dict:
 
 def busy_3d() -> bool:
     return _shape_lock.locked()
+
+
+# ---------- video (keyframes + motion) ----------
+VIDEO_FPS = 24
+VIDEO_BEATS = ["establishing wide shot", "medium shot", "close-up detail shot", "dynamic low angle",
+               "sweeping side view", "final hero shot"]
+
+
+def _ken_burns(img, t: float, k: int, size):
+    from PIL import Image
+    w, h = size
+    zoom = 1.0 + 0.10 * t if k % 2 == 0 else 1.10 - 0.10 * t
+    cw, ch = w / zoom, h / zoom
+    dx = (w - cw) * (0.5 + 0.4 * (t - 0.5) * (1 if k % 3 else -1))
+    dy = (h - ch) * 0.5
+    return img.crop((dx, dy, dx + cw, dy + ch)).resize(size, Image.BICUBIC)
+
+
+def generate_video(prompt: str, duration: int, style: str = "") -> bytes:
+    import tempfile
+    import av
+    import numpy as np
+    from PIL import Image
+    size = ASPECTS["16:9"]
+    n = max(2, round(duration / 2.5))
+    keys = []
+    with _image_lock:
+        t2i, i2i = _pipes()
+        full = lambda b: f"{prompt}, {b}, {style}".strip(", ")  # noqa: E731
+        img = t2i(prompt=full(VIDEO_BEATS[0]), num_inference_steps=1, guidance_scale=0.0,
+                  width=size[0], height=size[1]).images[0]
+        keys.append(img)
+        for k in range(1, n):
+            img = i2i(prompt=full(VIDEO_BEATS[k % len(VIDEO_BEATS)]), image=img, num_inference_steps=2,
+                      strength=0.55, guidance_scale=0.0).images[0].resize(size)
+            keys.append(img)
+    total, fade = duration * VIDEO_FPS, VIDEO_FPS // 2
+    seg = total / n
+    with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
+        with av.open(tmp.name, "w") as out:
+            st = out.add_stream("libx264", rate=VIDEO_FPS, options={"crf": "22", "preset": "veryfast"})
+            st.width, st.height, st.pix_fmt = size[0], size[1], "yuv420p"
+            for f in range(total):
+                k = min(n - 1, int(f / seg))
+                t = (f - k * seg) / seg
+                frame = _ken_burns(keys[k], t, k, size)
+                remaining = (k + 1) * seg - f
+                if k < n - 1 and remaining < fade:
+                    nxt = _ken_burns(keys[k + 1], 0.0, k + 1, size)
+                    frame = Image.blend(frame, nxt, 1 - remaining / fade)
+                vf = av.VideoFrame.from_ndarray(np.asarray(frame.convert("RGB")), format="rgb24")
+                for p in st.encode(vf):
+                    out.mux(p)
+            for p in st.encode():
+                out.mux(p)
+        return Path(tmp.name).read_bytes()
+
+
+# ---------- music ----------
+_music = None
+_music_lock = threading.Lock()
+MUSIC_MODEL = "facebook/musicgen-small"
+
+
+def generate_music(prompt: str, duration: int) -> bytes:
+    global _music
+    import numpy as np
+    with _music_lock:
+        if _music is None:
+            import torch
+            from transformers import AutoProcessor, MusicgenForConditionalGeneration
+            torch.set_num_threads(cpu_threads())
+            cache = str(SCRATCH_MODELS_DIR / "hf")
+            _music = (AutoProcessor.from_pretrained(MUSIC_MODEL, cache_dir=cache),
+                      MusicgenForConditionalGeneration.from_pretrained(MUSIC_MODEL, cache_dir=cache))
+        proc, model = _music
+        inputs = proc(text=[prompt], padding=True, return_tensors="pt")
+        audio = model.generate(**inputs, max_new_tokens=int(duration * 50) + 4, do_sample=True, guidance_scale=3.0)
+        rate = model.config.audio_encoder.sampling_rate
+    pcm = (np.clip(audio[0, 0].numpy(), -1, 1) * 32767).astype("<i2")
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(rate)
+        wf.writeframes(pcm.tobytes())
+    return buf.getvalue()

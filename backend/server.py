@@ -29,6 +29,7 @@ db = client[os.environ["DB_NAME"]]
 fs = AsyncIOMotorGridFSBucket(db, bucket_name="voice_samples")
 takes_fs = AsyncIOMotorGridFSBucket(db, bucket_name="voice_takes")
 models_fs = AsyncIOMotorGridFSBucket(db, bucket_name="models3d")
+media_fs = AsyncIOMotorGridFSBucket(db, bucket_name="media")
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALG = "HS256"
@@ -232,11 +233,6 @@ class TTSIn(BaseModel):
     text: str = Field(min_length=1, max_length=4096)
     voice: str = "nova"
     hd: bool = False
-
-
-class JobIn(BaseModel):
-    prompt: str = Field(min_length=1)
-    duration: int = 10
 
 
 # ---------- routes ----------
@@ -473,30 +469,91 @@ async def speak_in_clone(text: str, clone: dict) -> dict:
         raise HTTPException(status_code=424, detail=f"Voice clone engine error: {e.__class__.__name__}")
 
 
-# ---------- video & music jobs ----------
-async def create_job(kind: str, path: str, payload: dict, user: Optional[dict]):
-    r, ki = await frasberg("POST", path, payload, feature=kind)
-    d = r.json()
-    job_id = d.get("task_id") or d.get("job_id")
-    if not job_id:
-        raise HTTPException(status_code=424, detail=d.get("message") or "Frasberg did not return a job")
-    await db.jobs.insert_one({"id": job_id, "kind": kind, "key_index": ki, "prompt": payload["prompt"],
-                              "user_id": user["id"] if user else None, "status": d.get("status", "queued"),
-                              "created_at": now_iso()})
-    return {"job_id": job_id, "kind": kind, "status": d.get("status", "queued"), "eta_seconds": d.get("eta_seconds")}
+# ---------- video & music jobs (Frasberg Edge) ----------
+VIDEO_STYLES = {
+    "cinematic": "cinematic film still, anamorphic lens, dramatic lighting, rich color grade",
+    "photoreal": "photorealistic, natural light, ultra detailed, 35mm photography",
+    "anime": "anime key visual, vibrant cel shading, clean line art",
+    "3d": "3D animated film still, pixar style, soft global illumination",
+    "noir": "black and white film noir, high contrast, moody shadows",
+    "fantasy": "epic fantasy concept art, magical glow, painterly detail",
+}
+MUSIC_STYLES = {
+    "lofi": "lo-fi hip hop, mellow, vinyl crackle", "cinematic": "epic cinematic orchestral score",
+    "electronic": "electronic dance music, synths, punchy beat", "ambient": "ambient, atmospheric pads, calm",
+    "rock": "rock, electric guitars, live drums", "jazz": "smooth jazz, saxophone, upright bass",
+    "hiphop": "hip hop beat, boom bap drums, deep bass", "acoustic": "acoustic folk, guitar, warm",
+}
+MEDIA_LIMITS = {"video": (5, 15), "music": (5, 30)}
+media_queues = {"video": asyncio.Lock(), "music": asyncio.Lock()}
+
+
+class JobIn(BaseModel):
+    prompt: str = Field(min_length=1, max_length=500)
+    duration: int = 10
+    style: Optional[str] = None
+
+
+async def job_out(job: dict) -> dict:
+    out = {"job_id": job["id"], "kind": job["kind"], "status": job["status"], "prompt": job.get("prompt"),
+           "style": job.get("style"), "duration": job.get("duration"), "error": job.get("error"),
+           "url": f"/api/media/{job['id']}" if job["status"] == "completed" else None}
+    if job["status"] == "queued":
+        out["queue_position"] = await db.jobs.count_documents(
+            {"kind": job["kind"], "engine": "local", "status": {"$in": ["queued", "running"]},
+             "created_at": {"$lt": job["created_at"]}}) + 1
+    return out
+
+
+async def run_media(job: dict):
+    kind = job["kind"]
+    async with media_queues[kind]:
+        await db.jobs.update_one({"id": job["id"]}, {"$set": {"status": "running", "started_at": now_iso()}})
+        try:
+            if kind == "video":
+                data = await asyncio.to_thread(local_engines.generate_video, job["prompt"], job["duration"],
+                                               VIDEO_STYLES.get(job.get("style") or "", ""))
+                mime = "video/mp4"
+            else:
+                style = MUSIC_STYLES.get(job.get("style") or "", "")
+                data = await asyncio.to_thread(local_engines.generate_music,
+                                               f"{job['prompt']}. {style}" if style else job["prompt"], job["duration"])
+                mime = "audio/wav"
+            file_id = await media_fs.upload_from_stream(f"{kind}/{job['id']}", data, metadata={"mime": mime})
+            update = {"status": "completed", "file_id": file_id, "mime": mime}
+        except Exception as e:  # noqa: BLE001
+            logger.exception("%s generation failed", kind)
+            update = {"status": "failed", "error": f"{kind.title()} engine error: {e.__class__.__name__}"}
+        await db.jobs.update_one({"id": job["id"]}, {"$set": {**update, "finished_at": now_iso()}})
+
+
+async def create_media_job(kind: str, body: JobIn, user: Optional[dict]):
+    lo, hi = MEDIA_LIMITS[kind]
+    job = {"id": str(uuid.uuid4()), "kind": kind, "engine": "local", "status": "queued", "prompt": body.prompt.strip(),
+           "style": body.style, "duration": max(lo, min(hi, body.duration)), "error": None,
+           "user_id": user["id"] if user else None, "created_at": now_iso()}
+    await db.jobs.insert_one(job.copy())
+    asyncio.create_task(run_media(job))
+    return await job_out(job)
 
 
 @api.post("/video")
 async def video(body: JobIn, user: Optional[dict] = Depends(optional_user)):
-    return await create_job("video", "/generate/video", {
-        "prompt": body.prompt, "duration": body.duration, "model": "frasberg-engine", "ratio": "16:9",
-        "motion": "medium", "guidance_scale": 7, "seed": None, "output_format": "mp4"}, user)
+    return await create_media_job("video", body, user)
 
 
 @api.post("/music")
 async def music(body: JobIn, user: Optional[dict] = Depends(optional_user)):
-    return await create_job("music", "/generate/music",
-                            {"prompt": body.prompt, "duration": body.duration, "model": "frasberg-music"}, user)
+    return await create_media_job("music", body, user)
+
+
+@api.get("/media/{job_id}")
+async def media_file(job_id: str):
+    job = await db.jobs.find_one({"id": job_id, "status": "completed", "engine": "local"}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Not ready")
+    stream = await media_fs.open_download_stream(job["file_id"])
+    return Response(content=await stream.read(), media_type=job["mime"], headers={"Accept-Ranges": "none"})
 
 
 @api.get("/jobs/{job_id}")
@@ -504,6 +561,8 @@ async def job_status(job_id: str):
     job = await db.jobs.find_one({"id": job_id}, {"_id": 0})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if job.get("engine") == "local":
+        return await job_out(job)
     r, _ = await frasberg("GET", f"/jobs/{job_id}", key_index=job["key_index"])
     d = r.json()
     status = d.get("status", "queued")
@@ -580,12 +639,13 @@ shape_queue = asyncio.Lock()
 
 
 class ModelIn(BaseModel):
-    prompt: str = Field(min_length=1, max_length=300)
+    prompt: Optional[str] = Field(default=None, max_length=300)
+    image_base64: Optional[str] = None
     session_id: Optional[str] = None
 
 
 async def model_out(m: dict) -> dict:
-    out = {k: m.get(k) for k in ("id", "prompt", "status", "error", "created_at", "finished_at")}
+    out = {k: m.get(k) for k in ("id", "prompt", "status", "error", "created_at", "finished_at", "source", "thumbnail")}
     out["model_url"] = f"/api/3d/{m['id']}/model.glb" if m["status"] == "completed" else None
     if m["status"] == "queued":
         out["queue_position"] = await db.models3d.count_documents(
@@ -593,11 +653,11 @@ async def model_out(m: dict) -> dict:
     return out
 
 
-async def run_3d(model_id: str, prompt: str):
+async def run_3d(model_id: str, prompt: str, image_b64: Optional[str] = None):
     async with shape_queue:
         await db.models3d.update_one({"id": model_id}, {"$set": {"status": "running", "started_at": now_iso()}})
         try:
-            glb = await asyncio.to_thread(local_engines.generate_3d, prompt)
+            glb = await asyncio.to_thread(local_engines.generate_3d, prompt, image_b64)
             file_id = await models_fs.upload_from_stream(f"models3d/{model_id}.glb", glb)
             update = {"status": "completed", "file_id": file_id}
         except Exception as e:  # noqa: BLE001
@@ -608,10 +668,20 @@ async def run_3d(model_id: str, prompt: str):
 
 @api.post("/3d")
 async def create_3d(body: ModelIn, user: Optional[dict] = Depends(optional_user)):
-    m = {"id": str(uuid.uuid4()), "prompt": body.prompt.strip(), "status": "queued", "error": None,
+    prompt = (body.prompt or "").strip()
+    if not prompt and not body.image_base64:
+        raise HTTPException(status_code=400, detail="Describe an object or upload a photo")
+    thumb = None
+    if body.image_base64:
+        try:
+            thumb = await asyncio.to_thread(local_engines.thumbnail, body.image_base64)
+        except Exception:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail="That file isn't a readable image")
+    m = {"id": str(uuid.uuid4()), "prompt": prompt or "Photo to 3D", "status": "queued", "error": None,
+         "source": "image" if body.image_base64 else "text", "thumbnail": thumb,
          "session_id": body.session_id, "user_id": user["id"] if user else None, "created_at": now_iso()}
     await db.models3d.insert_one(m.copy())
-    asyncio.create_task(run_3d(m["id"], m["prompt"]))
+    asyncio.create_task(run_3d(m["id"], m["prompt"], body.image_base64))
     return await model_out(m)
 
 
@@ -640,6 +710,73 @@ async def get_3d_file(model_id: str):
     stream = await models_fs.open_download_stream(m["file_id"])
     return Response(content=await stream.read(), media_type="model/gltf-binary",
                     headers={"Cache-Control": "public, max-age=86400"})
+
+
+# ---------- spaces builder ----------
+class SpaceItem(BaseModel):
+    uid: str = Field(min_length=1, max_length=64)
+    model_id: str
+    position: list[float] = Field(min_length=3, max_length=3)
+    rotation: list[float] = Field(min_length=3, max_length=3)
+    scale: float = Field(gt=0, le=50)
+
+
+class SpaceIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    ground: str = Field(default="#1b2a30", pattern=r"^#[0-9a-fA-F]{6}$")
+    items: list[SpaceItem] = Field(default_factory=list, max_length=60)
+
+
+def space_out(sp: dict) -> dict:
+    return {k: sp.get(k) for k in ("id", "name", "ground", "items", "author", "created_at", "updated_at")}
+
+
+async def check_models(items: list[SpaceItem]):
+    ids = {i.model_id for i in items}
+    found = await db.models3d.count_documents({"id": {"$in": list(ids)}, "status": "completed"})
+    if found != len(ids):
+        raise HTTPException(status_code=400, detail="Some objects are missing or not finished")
+
+
+@api.post("/spaces")
+async def create_space(body: SpaceIn, user: dict = Depends(current_user)):
+    await check_models(body.items)
+    sp = {"id": str(uuid.uuid4()), "user_id": user["id"], "author": user.get("name"), **body.model_dump(),
+          "created_at": now_iso(), "updated_at": now_iso()}
+    await db.spaces.insert_one(sp.copy())
+    return space_out(sp)
+
+
+@api.get("/spaces")
+async def list_spaces(user: dict = Depends(current_user)):
+    cur = db.spaces.find({"user_id": user["id"]}, {"_id": 0})
+    return [space_out(sp) for sp in await cur.sort("updated_at", -1).limit(100).to_list(None)]
+
+
+@api.get("/spaces/{space_id}")
+async def get_space(space_id: str):
+    sp = await db.spaces.find_one({"id": space_id}, {"_id": 0})
+    if not sp:
+        raise HTTPException(status_code=404, detail="Space not found")
+    return space_out(sp)
+
+
+@api.put("/spaces/{space_id}")
+async def update_space(space_id: str, body: SpaceIn, user: dict = Depends(current_user)):
+    await check_models(body.items)
+    res = await db.spaces.update_one({"id": space_id, "user_id": user["id"]},
+                                     {"$set": {**body.model_dump(), "updated_at": now_iso()}})
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail="Space not found")
+    return space_out(await db.spaces.find_one({"id": space_id}, {"_id": 0}))
+
+
+@api.delete("/spaces/{space_id}")
+async def delete_space(space_id: str, user: dict = Depends(current_user)):
+    res = await db.spaces.delete_one({"id": space_id, "user_id": user["id"]})
+    if not res.deleted_count:
+        raise HTTPException(status_code=404, detail="Space not found")
+    return {"deleted": True}
 
 
 # ---------- engine status ----------
@@ -789,6 +926,10 @@ async def startup():
     await db.login_attempts.create_index("identifier")
     await db.voice_takes.create_index([("user_id", 1), ("created_at", -1)])
     await db.models3d.create_index("id")
+    await db.spaces.create_index("id")
+    await db.spaces.create_index([("user_id", 1), ("updated_at", -1)])
+    await db.jobs.update_many({"engine": "local", "status": {"$in": ["queued", "running"]}},
+                              {"$set": {"status": "failed", "error": "Interrupted by a server restart. Please try again."}})
     await db.models3d.update_many({"status": {"$in": ["queued", "running"]}},
                                   {"$set": {"status": "failed", "error": "Interrupted by a server restart. Please try again."}})
     asyncio.get_running_loop().run_in_executor(None, local_engines.warm_up)

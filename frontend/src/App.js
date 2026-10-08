@@ -17,6 +17,10 @@ import SpeechToSpeech from "./pages/SpeechToSpeech";
 import VoiceClone from "./pages/VoiceClone";
 import Login from "./pages/Login";
 import Studio3D from "./pages/Studio3D";
+import ModelShare from "./pages/ModelShare";
+import Spaces from "./pages/Spaces";
+import SpaceEditor from "./pages/SpaceEditor";
+import SpaceView from "./pages/SpaceView";
 
 function App() {
   return (
@@ -40,6 +44,10 @@ function App() {
               <Route path="/voice-clone" element={<VoiceClone />} />
               <Route path="/login" element={<Login />} />
               <Route path="/3d" element={<Studio3D />} />
+              <Route path="/3d/s/:id" element={<ModelShare />} />
+              <Route path="/spaces" element={<Spaces />} />
+              <Route path="/spaces/:id" element={<SpaceEditor />} />
+              <Route path="/spaces/:id/view" element={<SpaceView />} />
               <Route path="/signup" element={<Login mode="register" />} />
             </Routes>
           </FrasbergStarfieldLayout>
